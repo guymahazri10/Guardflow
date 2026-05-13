@@ -19,7 +19,7 @@ create table if not exists public.shift_staffing (
   id uuid primary key default gen_random_uuid(),
   shift_id text not null,
   shift_date date not null,
-  guard_names jsonb not null default '[]'::jsonb,
+guard_names jsonb not null default '{}'::jsonb
   updated_by uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
