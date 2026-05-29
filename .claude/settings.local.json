@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(git -C /Users/guymahatzri/Desktop/Guardflow status)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}
