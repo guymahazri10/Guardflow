@@ -35,6 +35,22 @@ GuardFlow is intended to help manage shift operations with a clear separation be
    npm run dev
    ```
 
+## Supabase setup
+
+1. Create a new Supabase project from the Supabase dashboard.
+2. Open the project settings and copy the project URL into `.env`:
+   ```bash
+   VITE_SUPABASE_URL="https://your-project-ref.supabase.co"
+   ```
+3. Copy the public anon key into `.env`:
+   ```bash
+   VITE_SUPABASE_ANON_KEY="your-supabase-anon-key"
+   ```
+4. In the Supabase SQL editor, run the contents of `supabase/schema.sql`.
+5. After the schema finishes successfully, run the contents of `supabase/rls.sql` in the same SQL editor.
+
+Do not commit real Supabase keys or other secrets.
+
 ## Environment variables
 
 - `VITE_SUPABASE_URL`
