@@ -227,18 +227,18 @@ export function RosterEditorPage() {
       <div className="mb-6 grid gap-4 md:grid-cols-2">
         <section className="rounded border border-slate-200 bg-white p-4">
           <h2 className="mb-3 text-lg font-semibold text-slate-900">הוספת תפקיד</h2>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2">
             <input
               type="text"
               value={newColumnName}
               onChange={(event) => setNewColumnName(event.target.value)}
               placeholder="שם תפקיד"
-              className="flex-1 rounded border border-slate-300 px-3 py-2 text-slate-900"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-slate-900"
             />
             <button
               type="button"
               onClick={handleAddColumn}
-              className="rounded bg-slate-900 px-4 py-2 font-medium text-white"
+              className="w-full rounded bg-slate-900 px-4 py-2 font-medium text-white"
             >
               הוסף תפקיד
             </button>
@@ -247,19 +247,19 @@ export function RosterEditorPage() {
 
         <section className="rounded border border-slate-200 bg-white p-4">
           <h2 className="mb-3 text-lg font-semibold text-slate-900">הוספת שורת זמן</h2>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex flex-col gap-2">
             <input
               type="text"
               value={newTimeLabel}
               onChange={(event) => setNewTimeLabel(event.target.value)}
               placeholder="07:00"
-              className="flex-1 rounded border border-slate-300 px-3 py-2 text-slate-900"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-slate-900"
               dir="ltr"
             />
             <button
               type="button"
               onClick={handleAddTimeRow}
-              className="rounded bg-slate-900 px-4 py-2 font-medium text-white"
+              className="w-full rounded bg-slate-900 px-4 py-2 font-medium text-white"
             >
               הוסף שורת זמן
             </button>
