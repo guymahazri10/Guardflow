@@ -6,6 +6,7 @@ import {
   usePublishRosterBoard,
   useRosterBoards,
 } from '../hooks/useRosterBoards'
+import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
 import type { RosterBoard } from '../lib/rosterBoards'
 
 type ShiftVariant = {
@@ -90,6 +91,30 @@ export function AdminPanelPage() {
     }
   }
 
+  async function handleCreateRosterBoardFromTemplate() {
+    const template = findDefaultRosterTemplateByShiftId(selectedShiftId)
+
+    if (!template) {
+      setActionError('לא נמצאה תבנית למשמרת שנבחרה.')
+      return
+    }
+
+    setActionError(null)
+
+    try {
+      await createRosterBoardMutation.mutateAsync({
+        shift_id: template.shift_id,
+        shift_type: template.shift_type,
+        cols: template.cols,
+        rows: template.rows,
+        notes: template.notes,
+        published: false,
+      })
+    } catch (error) {
+      setActionError(getReadableError(error))
+    }
+  }
+
   async function handleTogglePublished(board: RosterBoard) {
     if (!board.published && !canPublishBoard(board)) {
       setActionError('כדי לפרסם צריך להוסיף לפחות תפקיד אחד ובלוק זמן אחד.')
@@ -144,16 +169,28 @@ export function AdminPanelPage() {
               ))}
             </select>
           </label>
-          <button
-            type="button"
-            onClick={() => {
-              void handleCreateRosterBoard()
-            }}
-            disabled={isMutating}
-            className="rounded bg-slate-900 px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-          >
-            צור לו״ז
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => {
+                void handleCreateRosterBoard()
+              }}
+              disabled={isMutating}
+              className="rounded bg-slate-900 px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              צור לו״ז
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void handleCreateRosterBoardFromTemplate()
+              }}
+              disabled={isMutating}
+              className="rounded border border-slate-300 px-4 py-2 font-medium text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              צור מתבנית
+            </button>
+          </div>
         </div>
       </section>
 
