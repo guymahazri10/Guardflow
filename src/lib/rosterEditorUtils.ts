@@ -44,14 +44,10 @@ export function removeColumn(
 ): ColRowResult {
   return {
     cols: cols.filter((col) => col !== columnName),
-    rows: rows.map((row) => {
-      const { [columnName]: _removedCell, ...remainingCells } = row.cells
-
-      return {
-        ...row,
-        cells: remainingCells,
-      }
-    }),
+    rows: rows.map((row) => ({
+      ...row,
+      cells: Object.fromEntries(Object.entries(row.cells).filter(([col]) => col !== columnName)),
+    })),
   }
 }
 
