@@ -128,7 +128,9 @@ function AllShiftTab({
   cols: string[]
   currentBlock: RosterBoardRow | null
 }) {
-  const rows: RosterBoardRow[] = board.rows ?? []
+  const allRows: RosterBoardRow[] = board.rows ?? []
+  const currentIndex = currentBlock ? allRows.findIndex((row) => row.time === currentBlock.time) : -1
+  const rows = currentIndex >= 0 ? allRows.slice(currentIndex) : allRows
 
   if (!rows.length) return <Placeholder icon="📋" text="אין לוח זמנים לתצוגה" />
 
