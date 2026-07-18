@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCreateRosterBoard, useDeleteRosterBoard, useRosterBoards } from '../hooks/useRosterBoards'
 import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
-import { SHIFT_CATEGORIES, SHIFTS, type ShiftConfig } from '../constants/shifts'
+import { SHIFT_CATEGORIES, SHIFTS, getShiftHoursLabel, type ShiftConfig } from '../constants/shifts'
 import type { RosterBoard } from '../lib/rosterBoards'
 
 type ShiftDisplay = {
@@ -11,17 +11,19 @@ type ShiftDisplay = {
   subtitle: string
 }
 
-/** defaultRosterTemplates.ts has the real per-variant label/guard-count/hours
- *  (e.g. morning_6 ends 15:30, morning_5 ends 15:00) — more precise than the
- *  category-boundary hours in constants/shifts.ts. Fall back to SHIFTS if a
- *  variant somehow has no template. */
+/** Guard count comes from defaultRosterTemplates.ts (subLabel); hours use the
+ *  canonical category boundary (07:00–15:00 / 15:00–23:00 / 23:00–07:00),
+ *  not the template's real-world hours which include a 30min handover
+ *  buffer (e.g. morning_6 actually ends 15:30) — that buffer is real
+ *  schedule data, not something we want surfaced as "the shift's hours". */
 function buildShiftDisplay(shift: ShiftConfig): ShiftDisplay {
   const template = findDefaultRosterTemplateByShiftId(shift.id)
+  const hours = getShiftHoursLabel(shift)
 
   return {
     shift,
     title: template?.label ?? `משמרת ${SHIFT_CATEGORIES[shift.category].label}`,
-    subtitle: template ? `${template.subLabel} · ${template.hours}` : shift.label,
+    subtitle: template ? `${template.subLabel} · ${hours}` : `${shift.label} · ${hours}`,
   }
 }
 

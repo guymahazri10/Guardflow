@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useClock, formatHHMM } from '../hooks/useClock'
 import { useActiveBoard } from '../hooks/useActiveBoard'
 import GuardCard from '../components/ui/GuardCard'
-import { SHIFT_CATEGORIES } from '../constants/shifts'
+import { SHIFT_CATEGORIES, getShiftById, getShiftHoursLabel } from '../constants/shifts'
 import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
-import { getCurrentBlock, getNextBlock } from '../lib/shiftBlocks'
+import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
 
 type Tab = 'now' | 'all'
@@ -16,11 +16,13 @@ export function ShiftLivePage() {
 
   const catConfig = SHIFT_CATEGORIES[category]
   const template = board ? findDefaultRosterTemplateByShiftId(board.shift_id) : null
+  const shift = board ? getShiftById(board.shift_id) : undefined
   const shiftLabel = template?.label ?? `משמרת ${catConfig.label}`
-  const shiftHours = template?.hours ?? catConfig.hours
+  // Canonical category hours (07:00–15:00 / 15:00–23:00 / 23:00–07:00), not the
+  // template's real-world hours which include a 30min handover buffer.
+  const shiftHours = shift ? getShiftHoursLabel(shift) : catConfig.hours
   const isNight = category === 'night'
   const currentBlock = board ? getCurrentBlock(board.rows ?? [], now, isNight) : null
-  const nextBlock = board ? getNextBlock(board.rows ?? [], currentBlock, isNight) : null
   const cols: string[] = board?.cols ?? []
 
   return (
@@ -65,7 +67,7 @@ export function ShiftLivePage() {
         ) : !board ? (
           <EmptyState categoryLabel={catConfig.label} hours={catConfig.hours} />
         ) : tab === 'now' ? (
-          <NowTab board={board} cols={cols} currentBlock={currentBlock} nextBlock={nextBlock} />
+          <NowTab board={board} cols={cols} currentBlock={currentBlock} />
         ) : (
           <AllShiftTab board={board} cols={cols} currentBlock={currentBlock} />
         )}
@@ -80,12 +82,10 @@ function NowTab({
   board,
   cols,
   currentBlock,
-  nextBlock,
 }: {
   board: RosterBoard
   cols: string[]
   currentBlock: RosterBoardRow | null
-  nextBlock: RosterBoardRow | null
 }) {
   if (!currentBlock) {
     return <Placeholder icon="⏱️" text="אין בלוק זמן פעיל כרגע" />
@@ -93,14 +93,9 @@ function NowTab({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between px-0.5">
-        <span
-          className="text-xs font-bold text-text-secondary"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        >
-          {currentBlock.time}
-          {nextBlock ? ` – ${nextBlock.time}` : ''}
-        </span>
+      {/* Shift-wide hours already shown in the clock hero above — this only
+          needs the active-guard count, not another time range. */}
+      <div className="flex items-center justify-end px-0.5">
         <span className="text-[11px] font-bold text-primary bg-primary-light rounded-full px-2.5 py-1">
           {cols.length} פעיל
         </span>

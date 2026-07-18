@@ -11,9 +11,9 @@ export interface ShiftConfig {
 }
 
 export const SHIFT_CATEGORIES: Record<ShiftCategory, { label: string; color: string; hours: string }> = {
-  morning: { label: 'בוקר', color: '#f59e0b', hours: '07:00–14:59' },
-  afternoon: { label: 'צהריים', color: '#3b82f6', hours: '15:00–22:59' },
-  night: { label: 'לילה', color: '#6366f1', hours: '23:00–06:59' },
+  morning: { label: 'בוקר', color: '#f59e0b', hours: '07:00–15:00' },
+  afternoon: { label: 'צהריים', color: '#3b82f6', hours: '15:00–23:00' },
+  night: { label: 'לילה', color: '#6366f1', hours: '23:00–07:00' },
 };
 
 export const SHIFTS: ShiftConfig[] = [

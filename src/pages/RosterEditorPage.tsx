@@ -13,7 +13,7 @@ import {
   updateCell,
 } from '../lib/rosterEditorUtils'
 import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
-import { SHIFT_CATEGORIES, getShiftById } from '../constants/shifts'
+import { SHIFT_CATEGORIES, getShiftById, getShiftHoursLabel } from '../constants/shifts'
 
 const publishHelperText = 'כדי לפרסם צריך להוסיף לפחות תפקיד אחד ובלוק זמן אחד.'
 
@@ -71,7 +71,9 @@ export function RosterEditorPage() {
   const shift = board ? getShiftById(board.shift_id) : undefined
   const template = board ? findDefaultRosterTemplateByShiftId(board.shift_id) : null
   const title = template?.label ?? (shift ? `משמרת ${SHIFT_CATEGORIES[shift.category].label}` : 'לו״ז')
-  const subtitle = template ? `${template.subLabel} · ${template.hours}` : ''
+  // Canonical category hours, not the template's real-world hours (which include a 30min handover buffer).
+  const hours = shift ? getShiftHoursLabel(shift) : ''
+  const subtitle = template ? `${template.subLabel} · ${hours}` : ''
   const typeLabel = shift ? `${SHIFT_CATEGORIES[shift.category].label} – ${template?.subLabel ?? ''}` : ''
 
   useEffect(() => {
