@@ -8,7 +8,9 @@ import {
   fetchRosterBoardsByShiftId,
   publishRosterBoard,
   updateRosterBoard,
+  updateRosterBoardGuardNames,
   type CreateRosterBoardInput,
+  type GuardAssignment,
   type RosterBoard,
   type UpdateRosterBoardInput,
 } from '../lib/rosterBoards'
@@ -30,6 +32,11 @@ type UpdateRosterBoardVariables = {
 type PublishRosterBoardVariables = {
   id: string
   published: boolean
+}
+
+type UpdateGuardNamesVariables = {
+  id: string
+  guardNames: Record<string, GuardAssignment>
 }
 
 function invalidateRosterBoardLists(queryClient: QueryClient) {
@@ -96,6 +103,21 @@ export function usePublishRosterBoard() {
 
   return useMutation<RosterBoard, Error, PublishRosterBoardVariables>({
     mutationFn: ({ id, published }) => publishRosterBoard(id, published),
+    onSuccess: async (_board, variables) => {
+      await Promise.all([
+        invalidateRosterBoardLists(queryClient),
+        queryClient.invalidateQueries({ queryKey: rosterBoardKeys.published() }),
+        queryClient.invalidateQueries({ queryKey: rosterBoardKeys.detail(variables.id) }),
+      ])
+    },
+  })
+}
+
+export function useUpdateGuardNames() {
+  const queryClient = useQueryClient()
+
+  return useMutation<RosterBoard, Error, UpdateGuardNamesVariables>({
+    mutationFn: ({ id, guardNames }) => updateRosterBoardGuardNames(id, guardNames),
     onSuccess: async (_board, variables) => {
       await Promise.all([
         invalidateRosterBoardLists(queryClient),

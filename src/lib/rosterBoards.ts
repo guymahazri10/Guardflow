@@ -5,6 +5,11 @@ export type RosterBoardRow = {
   cells: Record<string, string>
 }
 
+export type GuardAssignment = {
+  name: string
+  user_id: string | null
+}
+
 export type RosterBoard = {
   id: string
   shift_id: string
@@ -13,6 +18,7 @@ export type RosterBoard = {
   rows: RosterBoardRow[]
   notes: string | null
   published: boolean
+  guard_names: Record<string, GuardAssignment>
   created_by: string | null
   created_at: string
   updated_at: string
@@ -36,9 +42,10 @@ export type UpdateRosterBoardInput = {
   published?: boolean
 }
 
-type RosterBoardRecord = Omit<RosterBoard, 'cols' | 'rows'> & {
+type RosterBoardRecord = Omit<RosterBoard, 'cols' | 'rows' | 'guard_names'> & {
   cols: unknown
   rows: unknown
+  guard_names: unknown
 }
 
 type RosterBoardWrite = {
@@ -51,7 +58,7 @@ type RosterBoardWrite = {
 }
 
 const ROSTER_BOARD_SELECT =
-  'id, shift_id, shift_type, cols, rows, notes, published, created_by, created_at, updated_at'
+  'id, shift_id, shift_type, cols, rows, notes, published, guard_names, created_by, created_at, updated_at'
 
 function getErrorMessage(action: string, error: { message?: string }) {
   return `${action}: ${error.message ?? 'Supabase request failed.'}`
@@ -89,11 +96,38 @@ function parseRosterBoardRows(value: unknown): RosterBoardRow[] {
   return value
 }
 
+function isGuardAssignment(value: unknown): value is GuardAssignment {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const assignment = value as { name?: unknown; user_id?: unknown }
+
+  return (
+    typeof assignment.name === 'string' &&
+    (assignment.user_id === null || typeof assignment.user_id === 'string')
+  )
+}
+
+function parseGuardNames(value: unknown): Record<string, GuardAssignment> {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    !Object.values(value).every(isGuardAssignment)
+  ) {
+    throw new Error('Invalid roster_boards.guard_names data.')
+  }
+
+  return value as Record<string, GuardAssignment>
+}
+
 function mapRosterBoard(record: RosterBoardRecord): RosterBoard {
   return {
     ...record,
     cols: parseStringArray(record.cols, 'cols'),
     rows: parseRosterBoardRows(record.rows),
+    guard_names: parseGuardNames(record.guard_names),
   }
 }
 
@@ -214,6 +248,22 @@ export async function publishRosterBoard(id: string, published: boolean): Promis
 
   if (error) {
     throw new Error(getErrorMessage('Failed to publish roster board', error))
+  }
+
+  return mapRosterBoard(data as RosterBoardRecord)
+}
+
+export async function updateRosterBoardGuardNames(
+  id: string,
+  guardNames: Record<string, GuardAssignment>,
+): Promise<RosterBoard> {
+  const { data, error } = await supabase.rpc('update_roster_board_guard_names', {
+    board_id: id,
+    new_guard_names: guardNames,
+  })
+
+  if (error) {
+    throw new Error(getErrorMessage('Failed to update guard names', error))
   }
 
   return mapRosterBoard(data as RosterBoardRecord)

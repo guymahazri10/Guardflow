@@ -80,7 +80,7 @@ async function fetchProfile(userId: string): Promise<ProfileResult> {
   const hasValidRole = isAppRole(profileRow.app_role)
   const profile: Profile = {
     ...profileRow,
-    app_role: hasValidRole ? profileRow.app_role : null,
+    app_role: isAppRole(profileRow.app_role) ? profileRow.app_role : null,
   }
 
   if (!hasValidRole) {

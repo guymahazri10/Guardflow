@@ -5,7 +5,13 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(git -C /Users/guymahatzri/Desktop/Guardflow status)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git config *)",
+      "Bash(git commit -m ' *)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }

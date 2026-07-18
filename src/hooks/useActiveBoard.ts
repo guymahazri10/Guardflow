@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { getActiveCategory, SHIFT_IDS_BY_CATEGORY, type ShiftCategory } from '../constants/shifts';
-import type { RosterBoard } from '../types';
+import type { RosterBoard } from '../lib/rosterBoards';
 
 interface ActiveBoardResult {
   board: RosterBoard | null;
