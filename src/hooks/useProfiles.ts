@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchProfiles, setUserAppRole, type ProfileListItem } from '../lib/profiles'
+import { fetchProfiles, setUserAppRole, setUserFullName, type ProfileListItem } from '../lib/profiles'
 import type { AppRole } from '../contexts/AuthContext'
 
 export const profileKeys = {
@@ -10,6 +10,11 @@ export const profileKeys = {
 type SetUserAppRoleVariables = {
   userId: string
   newRole: AppRole
+}
+
+type SetUserFullNameVariables = {
+  userId: string
+  newFullName: string
 }
 
 export function useProfiles(options?: { enabled?: boolean }) {
@@ -25,6 +30,17 @@ export function useSetUserAppRole() {
 
   return useMutation<ProfileListItem, Error, SetUserAppRoleVariables>({
     mutationFn: ({ userId, newRole }) => setUserAppRole(userId, newRole),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: profileKeys.list() })
+    },
+  })
+}
+
+export function useSetUserFullName() {
+  const queryClient = useQueryClient()
+
+  return useMutation<ProfileListItem, Error, SetUserFullNameVariables>({
+    mutationFn: ({ userId, newFullName }) => setUserFullName(userId, newFullName),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: profileKeys.list() })
     },

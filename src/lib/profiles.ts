@@ -41,3 +41,16 @@ export async function setUserAppRole(userId: string, newRole: AppRole): Promise<
 
   return data as ProfileListItem
 }
+
+export async function setUserFullName(userId: string, newFullName: string): Promise<ProfileListItem> {
+  const { data, error } = await supabase.rpc('set_user_full_name', {
+    target_user_id: userId,
+    new_full_name: newFullName,
+  })
+
+  if (error) {
+    throw new Error(getErrorMessage('Failed to update user name', error))
+  }
+
+  return data as ProfileListItem
+}
