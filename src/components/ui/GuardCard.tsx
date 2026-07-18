@@ -1,46 +1,32 @@
-import { getPositionColor } from '../../constants/colors';
+import { getPositionBadgeStyle } from '../../constants/colors'
 
 interface GuardCardProps {
-  role: string;
-  guardName: string | null;
-  task?: string;
-  highlight?: boolean;
+  role: string
+  guardName: string | null
+  task?: string
+  dim?: boolean
 }
 
-export default function GuardCard({ role, guardName, task, highlight }: GuardCardProps) {
-  const badgeColor = getPositionColor(role);
-  const isEmpty = !guardName;
+export default function GuardCard({ role, guardName, task, dim }: GuardCardProps) {
+  const badgeStyle = getPositionBadgeStyle(task || '—')
 
   return (
     <div
-      className={`card p-4 transition-shadow ${
-        highlight ? 'ring-2 ring-primary/20 shadow-card-md' : ''
+      className={`card h-16 px-3.5 flex items-center gap-2.5 transition-opacity ${
+        dim ? 'opacity-45 shadow-none' : ''
       }`}
     >
-      <div className="flex items-center justify-between gap-3">
-        {/* Role badge */}
-        <span
-          className="text-xs font-bold px-2.5 py-1 rounded-badge text-white shrink-0"
-          style={{ backgroundColor: badgeColor }}
-        >
-          {role}
-        </span>
-
-        {/* Task label */}
-        {task && (
-          <span className="text-xs text-text-muted bg-background px-2 py-0.5 rounded-full truncate">
-            {task}
-          </span>
-        )}
-      </div>
-
-      <div className="mt-3 min-h-[28px] flex items-center">
-        {isEmpty ? (
-          <span className="text-text-muted text-sm italic">לא הוגדר</span>
-        ) : (
-          <span className="text-text-primary font-semibold text-lg leading-tight">{guardName}</span>
-        )}
-      </div>
+      <span className="text-[11px] font-semibold text-text-muted shrink-0 w-16 text-right truncate">{role}</span>
+      <div className="w-px h-7 bg-border shrink-0" />
+      <span className="text-[15px] font-extrabold text-text-primary flex-1 min-w-0 truncate">
+        {guardName || <span className="text-text-muted font-medium italic text-sm">לא הוגדר</span>}
+      </span>
+      <span
+        className="text-[11px] font-bold px-2.5 py-1 rounded-full border shrink-0 max-w-[9rem] truncate"
+        style={badgeStyle}
+      >
+        {task || '—'}
+      </span>
     </div>
-  );
+  )
 }

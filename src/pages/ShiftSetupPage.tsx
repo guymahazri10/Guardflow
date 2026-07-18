@@ -15,6 +15,7 @@ import { useRosterBoardsByShiftId, useUpdateGuardNames } from '../hooks/useRoste
 import { useProfiles } from '../hooks/useProfiles'
 import type { ProfileListItem } from '../lib/profiles'
 import type { GuardAssignment, RosterBoard } from '../lib/rosterBoards'
+import GuardNameInput from '../components/ui/GuardNameInput'
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
@@ -59,27 +60,8 @@ export function ShiftSetupPage() {
     setSelectedShiftId(SHIFT_IDS_BY_CATEGORY[cat][0])
   }
 
-  function handleNameChange(role: string, name: string) {
-    setGuardNames((prev) => {
-      const current = prev[role]
-      const linkedProfile = current?.user_id ? profiles.find((p) => p.id === current.user_id) : undefined
-      const stillMatchesLinkedProfile = linkedProfile && linkedProfile.full_name === name
-      return {
-        ...prev,
-        [role]: { name, user_id: stillMatchesLinkedProfile ? current.user_id : null },
-      }
-    })
-  }
-
-  function handleUserLinkChange(role: string, userId: string) {
-    setGuardNames((prev) => {
-      const current = prev[role] ?? { name: '', user_id: null }
-      if (!userId) {
-        return { ...prev, [role]: { name: current.name, user_id: null } }
-      }
-      const profile = profiles.find((p) => p.id === userId)
-      return { ...prev, [role]: { name: profile?.full_name ?? current.name, user_id: userId } }
-    })
+  function handleAssignmentChange(role: string, assignment: GuardAssignment) {
+    setGuardNames((prev) => ({ ...prev, [role]: assignment }))
   }
 
   async function handleSave() {
@@ -234,8 +216,7 @@ export function ShiftSetupPage() {
                 key={role}
                 role={role}
                 value={guardNames[role] ?? { name: '', user_id: null }}
-                onNameChange={(v) => handleNameChange(role, v)}
-                onUserLinkChange={(userId) => handleUserLinkChange(role, userId)}
+                onChange={(assignment) => handleAssignmentChange(role, assignment)}
                 profiles={profiles}
                 readOnly={!canEdit}
               />
@@ -282,59 +263,24 @@ export function ShiftSetupPage() {
 function GuardNameRow({
   role,
   value,
-  onNameChange,
-  onUserLinkChange,
+  onChange,
   profiles,
   readOnly,
 }: {
   role: string
   value: GuardAssignment
-  onNameChange: (v: string) => void
-  onUserLinkChange: (userId: string) => void
+  onChange: (value: GuardAssignment) => void
   profiles: ProfileListItem[]
   readOnly: boolean
 }) {
   return (
-    <div className="bg-white rounded-xl border border-border overflow-hidden focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-shadow">
-      <div className="flex items-center h-[52px]">
-        {/* Role label — appears on right in RTL */}
-        <div className="flex items-center justify-end px-4 shrink-0 min-w-[88px] border-l border-border h-full">
-          <span className="text-sm font-medium text-text-secondary">{role}</span>
-        </div>
-
-        {/* Text input */}
-        <input
-          type="text"
-          value={value.name}
-          onChange={(e) => onNameChange(e.target.value)}
-          placeholder={readOnly ? '—' : 'הזן שם...'}
-          readOnly={readOnly}
-          className={`flex-1 px-4 text-sm text-text-primary bg-transparent outline-none h-full placeholder:text-text-muted ${
-            readOnly ? 'cursor-default text-text-secondary' : ''
-          }`}
-          dir="rtl"
-          autoCorrect="off"
-          autoCapitalize="words"
-        />
+    <div className="bg-white rounded-xl border border-border flex items-center overflow-hidden h-[52px] focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-shadow">
+      {/* Role label — appears on right in RTL */}
+      <div className="flex items-center justify-end px-4 shrink-0 min-w-[88px] border-l border-border h-full">
+        <span className="text-sm font-medium text-text-secondary">{role}</span>
       </div>
 
-      {/* Link to a registered user, so PositionChangeNotifier can find "me" on the board */}
-      {!readOnly && profiles.length > 0 && (
-        <div className="border-t border-border px-4 py-2 bg-background/50">
-          <select
-            value={value.user_id ?? ''}
-            onChange={(e) => onUserLinkChange(e.target.value)}
-            className="w-full bg-transparent text-xs text-text-secondary outline-none"
-          >
-            <option value="">— ללא קישור למשתמש —</option>
-            {profiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.full_name ?? profile.email ?? profile.id}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <GuardNameInput value={value} profiles={profiles} onChange={onChange} readOnly={readOnly} />
     </div>
   )
 }

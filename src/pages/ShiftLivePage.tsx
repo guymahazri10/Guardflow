@@ -1,54 +1,43 @@
-import { useState } from 'react';
-import { useClock, formatHHMM, formatDateHebrew } from '../hooks/useClock';
-import { useActiveBoard } from '../hooks/useActiveBoard';
-import GuardCard from '../components/ui/GuardCard';
-import { SHIFT_CATEGORIES, getShiftById } from '../constants/shifts';
-import { getCurrentBlock } from '../lib/shiftBlocks';
-import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards';
+import { useState } from 'react'
+import { useClock, formatHHMM } from '../hooks/useClock'
+import { useActiveBoard } from '../hooks/useActiveBoard'
+import GuardCard from '../components/ui/GuardCard'
+import { SHIFT_CATEGORIES } from '../constants/shifts'
+import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
+import { getCurrentBlock, getNextBlock } from '../lib/shiftBlocks'
+import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
 
-type Tab = 'now' | 'all';
+type Tab = 'now' | 'all'
 
 export function ShiftLivePage() {
-  const now = useClock();
-  const { board, loading, error, category, refetch } = useActiveBoard();
-  const [tab, setTab] = useState<Tab>('now');
+  const now = useClock()
+  const { board, loading, error, category, refetch } = useActiveBoard()
+  const [tab, setTab] = useState<Tab>('now')
 
-  const catConfig = SHIFT_CATEGORIES[category];
-  const shiftConfig = board ? getShiftById(board.shift_id) : null;
-  const isNight = category === 'night';
-  const currentBlock = board ? getCurrentBlock(board.rows ?? [], now, isNight) : null;
-  const cols: string[] = board?.cols ?? [];
+  const catConfig = SHIFT_CATEGORIES[category]
+  const template = board ? findDefaultRosterTemplateByShiftId(board.shift_id) : null
+  const shiftLabel = template?.label ?? `משמרת ${catConfig.label}`
+  const shiftHours = template?.hours ?? catConfig.hours
+  const isNight = category === 'night'
+  const currentBlock = board ? getCurrentBlock(board.rows ?? [], now, isNight) : null
+  const nextBlock = board ? getNextBlock(board.rows ?? [], currentBlock, isNight) : null
+  const cols: string[] = board?.cols ?? []
 
   return (
     <div className="flex flex-col flex-1 gap-0 max-w-mobile mx-auto w-full">
       {/* ── Clock hero ── */}
-      <div className="bg-white border-b border-border px-4 py-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <p
-              className="text-[52px] font-semibold leading-none tracking-tight text-text-primary"
-              style={{ fontFamily: 'JetBrains Mono, monospace' }}
-            >
-              {formatHHMM(now)}
-            </p>
-            <p className="text-text-secondary text-sm mt-1">{formatDateHebrew(now)}</p>
-          </div>
-
-          <div className="flex flex-col items-end gap-1.5 mt-1">
-            <span
-              className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
-              style={{ backgroundColor: catConfig.color }}
-            >
-              {catConfig.label}
-            </span>
-            {shiftConfig && (
-              <span className="text-xs text-text-muted">{shiftConfig.label}</span>
-            )}
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-[11px] text-text-muted">שידור חי</span>
-            </div>
-          </div>
+      <div className="bg-white border-b border-border px-4 py-6 flex flex-col items-center">
+        <p
+          className="text-[52px] font-extrabold leading-none tracking-tight text-text-primary"
+          style={{ fontFamily: 'JetBrains Mono, monospace' }}
+        >
+          {formatHHMM(now)}
+        </p>
+        <div className="flex items-center gap-1.5 mt-2.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+          <span className="text-xs font-bold text-primary tracking-wide">
+            {shiftLabel} · {shiftHours}
+          </span>
         </div>
       </div>
 
@@ -76,13 +65,13 @@ export function ShiftLivePage() {
         ) : !board ? (
           <EmptyState categoryLabel={catConfig.label} hours={catConfig.hours} />
         ) : tab === 'now' ? (
-          <NowTab board={board} cols={cols} currentBlock={currentBlock} />
+          <NowTab board={board} cols={cols} currentBlock={currentBlock} nextBlock={nextBlock} />
         ) : (
           <AllShiftTab board={board} cols={cols} currentBlock={currentBlock} />
         )}
       </div>
     </div>
-  );
+  )
 }
 
 /* ─── Now tab ─────────────────────────────────────────────────── */
@@ -91,42 +80,46 @@ function NowTab({
   board,
   cols,
   currentBlock,
+  nextBlock,
 }: {
-  board: RosterBoard;
-  cols: string[];
-  currentBlock: RosterBoardRow | null;
+  board: RosterBoard
+  cols: string[]
+  currentBlock: RosterBoardRow | null
+  nextBlock: RosterBoardRow | null
 }) {
   if (!currentBlock) {
-    return <Placeholder icon="⏱️" text="אין בלוק זמן פעיל כרגע" />;
+    return <Placeholder icon="⏱️" text="אין בלוק זמן פעיל כרגע" />
   }
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs text-text-muted">
-        בלוק זמן:{' '}
+      <div className="flex items-center justify-between px-0.5">
         <span
-          className="font-semibold text-text-secondary"
+          className="text-xs font-bold text-text-secondary"
           style={{ fontFamily: 'JetBrains Mono, monospace' }}
         >
           {currentBlock.time}
+          {nextBlock ? ` – ${nextBlock.time}` : ''}
         </span>
-      </p>
+        <span className="text-[11px] font-bold text-primary bg-primary-light rounded-full px-2.5 py-1">
+          {cols.length} פעיל
+        </span>
+      </div>
 
-      {cols.map((role) => (
-        <GuardCard
-          key={role}
-          role={role}
-          guardName={board.guard_names?.[role]?.name ?? null}
-          task={currentBlock.cells?.[role]}
-          highlight
-        />
-      ))}
+      <div className="flex flex-col gap-2">
+        {cols.map((role) => (
+          <GuardCard
+            key={role}
+            role={role}
+            guardName={board.guard_names?.[role]?.name ?? null}
+            task={currentBlock.cells?.[role]}
+          />
+        ))}
+      </div>
 
-      {cols.length === 0 && (
-        <Placeholder icon="📋" text="אין תפקידים מוגדרים בלוח זה" />
-      )}
+      {cols.length === 0 && <Placeholder icon="📋" text="אין תפקידים מוגדרים בלוח זה" />}
     </div>
-  );
+  )
 }
 
 /* ─── All-shift tab ───────────────────────────────────────────── */
@@ -136,99 +129,68 @@ function AllShiftTab({
   cols,
   currentBlock,
 }: {
-  board: RosterBoard;
-  cols: string[];
-  currentBlock: RosterBoardRow | null;
+  board: RosterBoard
+  cols: string[]
+  currentBlock: RosterBoardRow | null
 }) {
-  const rows: RosterBoardRow[] = board.rows ?? [];
+  const rows: RosterBoardRow[] = board.rows ?? []
 
-  if (!rows.length) return <Placeholder icon="📋" text="אין לוח זמנים לתצוגה" />;
+  if (!rows.length) return <Placeholder icon="📋" text="אין לוח זמנים לתצוגה" />
 
   return (
-    <div className="flex flex-col gap-3 pb-4">
+    <div className="flex flex-col gap-5 pb-4">
       {rows.map((row, i) => {
-        const isCurrent = row.time === currentBlock?.time;
+        const isCurrent = row.time === currentBlock?.time
+        const nextTime = rows[i + 1]?.time
+
         return (
-          <div
-            key={i}
-            className={`card p-4 ${
-              isCurrent ? 'ring-2 ring-primary/30' : ''
-            }`}
-          >
-            {/* Row header */}
-            <div className="flex items-center justify-between mb-3">
+          <div key={row.time}>
+            <div className="flex items-center justify-between gap-2 mb-2 px-0.5">
               <span
-                className="text-sm font-semibold text-text-primary"
+                className={`text-sm font-extrabold ${isCurrent ? 'text-primary' : 'text-text-secondary'}`}
                 style={{ fontFamily: 'JetBrains Mono, monospace' }}
               >
                 {row.time}
+                {nextTime ? ` – ${nextTime}` : ''}
               </span>
               {isCurrent && (
-                <span className="flex items-center gap-1 text-[11px] text-primary font-semibold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                  עכשיו
-                </span>
+                <span className="text-[10px] font-bold text-white bg-primary rounded-full px-2 py-0.5">עכשיו</span>
               )}
             </div>
 
-            {/* Roles grid */}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <div className="flex flex-col gap-2">
               {cols.map((role) => (
-                <RoleCell
+                <GuardCard
                   key={role}
                   role={role}
+                  guardName={board.guard_names?.[role]?.name ?? null}
                   task={row.cells?.[role]}
-                  guardName={board.guard_names?.[role]?.name}
+                  dim={!isCurrent}
                 />
               ))}
             </div>
           </div>
-        );
+        )
       })}
     </div>
-  );
-}
-
-function RoleCell({
-  role,
-  task,
-  guardName,
-}: {
-  role: string;
-  task?: string;
-  guardName?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[10px] font-semibold text-text-muted uppercase tracking-wide truncate">
-        {role}
-      </span>
-      {task && (
-        <span className="text-xs text-text-secondary truncate">{task}</span>
-      )}
-      <span className="text-sm font-medium text-text-primary truncate">
-        {guardName ?? <span className="text-text-muted italic text-xs">—</span>}
-      </span>
-    </div>
-  );
+  )
 }
 
 /* ─── States ──────────────────────────────────────────────────── */
 
 function LoadingSkeleton() {
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
       {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="card p-4 animate-pulse">
-          <div className="flex justify-between items-center">
-            <div className="h-5 w-16 bg-border rounded-full" />
-            <div className="h-4 w-20 bg-border rounded" />
-          </div>
-          <div className="mt-3 h-6 w-36 bg-border rounded" />
+        <div key={i} className="card h-16 px-3.5 flex items-center gap-2.5 animate-pulse">
+          <div className="h-3 w-14 bg-border rounded" />
+          <div className="w-px h-7 bg-border" />
+          <div className="h-4 w-28 bg-border rounded flex-1" />
+          <div className="h-5 w-16 bg-border rounded-full" />
         </div>
       ))}
     </div>
-  );
+  )
 }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -241,7 +203,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
         נסה שוב
       </button>
     </div>
-  );
+  )
 }
 
 function EmptyState({ categoryLabel, hours }: { categoryLabel: string; hours: string }) {
@@ -249,15 +211,11 @@ function EmptyState({ categoryLabel, hours }: { categoryLabel: string; hours: st
     <div className="card p-8 text-center">
       <p className="text-4xl mb-3">📋</p>
       <p className="font-semibold text-text-primary">אין לוח משמרת פעיל</p>
-      <p className="text-text-secondary text-sm mt-1.5">
-        לא נמצא לוח מפורסם למשמרת {categoryLabel}
-      </p>
+      <p className="text-text-secondary text-sm mt-1.5">לא נמצא לוח מפורסם למשמרת {categoryLabel}</p>
       <p className="text-text-muted text-xs mt-1">{hours}</p>
-      <p className="text-text-muted text-xs mt-3">
-        המנהל צריך ליצור ולפרסם לוח משמרת
-      </p>
+      <p className="text-text-muted text-xs mt-3">המנהל צריך ליצור ולפרסם לוח משמרת</p>
     </div>
-  );
+  )
 }
 
 function Placeholder({ icon, text }: { icon: string; text: string }) {
@@ -266,5 +224,5 @@ function Placeholder({ icon, text }: { icon: string; text: string }) {
       <p className="text-3xl mb-2">{icon}</p>
       <p className="text-text-muted text-sm">{text}</p>
     </div>
-  );
+  )
 }

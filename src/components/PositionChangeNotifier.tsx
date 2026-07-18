@@ -2,23 +2,33 @@ import { useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 import { useActiveBoard } from '../hooks/useActiveBoard'
-import { useClock } from '../hooks/useClock'
 import { getCurrentBlock, getNextBlock, minutesUntilBlockStart } from '../lib/shiftBlocks'
 import type { RosterBoard } from '../lib/rosterBoards'
 
 const NOTIFY_WINDOW_MINUTES = 5
+const CHECK_INTERVAL_MS = 30 * 1000
 
-function findMyRole(board: RosterBoard, userId: string): string | null {
-  const entry = Object.entries(board.guard_names).find(([, assignment]) => assignment.user_id === userId)
-  return entry ? entry[0] : null
+/** Prefer the user_id link; fall back to matching the guard's own display
+ *  name for roles someone typed in without linking an account. */
+function findMyRole(board: RosterBoard, userId: string, fullName: string | null): string | null {
+  const entries = Object.entries(board.guard_names)
+
+  const byUserId = entries.find(([, assignment]) => assignment.user_id === userId)
+  if (byUserId) return byUserId[0]
+
+  if (fullName) {
+    const byName = entries.find(([, assignment]) => assignment.name === fullName)
+    if (byName) return byName[0]
+  }
+
+  return null
 }
 
 /** Background watcher: notifies the logged-in guard ~5 minutes before their assigned
  *  task changes to a different position within the currently active board. */
 export function PositionChangeNotifier() {
-  const { isGuard, user } = useAuth()
+  const { isGuard, user, profile } = useAuth()
   const { board, category } = useActiveBoard()
-  const now = useClock()
   const notifiedForRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -30,34 +40,44 @@ export function PositionChangeNotifier() {
   useEffect(() => {
     if (!isGuard || !user || !board) return
 
-    const isNight = category === 'night'
-    const rows = board.rows ?? []
-    const currentBlock = getCurrentBlock(rows, now, isNight)
-    const nextBlock = getNextBlock(rows, currentBlock, isNight)
-    if (!currentBlock || !nextBlock) return
+    function check() {
+      if (!user || !board) return
 
-    const myRole = findMyRole(board, user.id)
-    if (!myRole) return
+      const now = new Date()
+      const isNight = category === 'night'
+      const rows = board.rows ?? []
+      const currentBlock = getCurrentBlock(rows, now, isNight)
+      const nextBlock = getNextBlock(rows, currentBlock, isNight)
+      if (!currentBlock || !nextBlock) return
 
-    const currentTask = currentBlock.cells?.[myRole]
-    const nextTask = nextBlock.cells?.[myRole]
-    if (!nextTask || nextTask === currentTask) return
+      const myRole = findMyRole(board, user.id, profile?.full_name ?? null)
+      if (!myRole) return
 
-    const minutesUntil = minutesUntilBlockStart(nextBlock, now, isNight)
-    if (minutesUntil < 0 || minutesUntil > NOTIFY_WINDOW_MINUTES) return
+      const currentTask = currentBlock.cells?.[myRole]
+      const nextTask = nextBlock.cells?.[myRole]
+      if (!nextTask || nextTask === currentTask) return
 
-    const notifyKey = `${board.id}:${nextBlock.time}:${nextTask}`
-    if (notifiedForRef.current === notifyKey) return
-    notifiedForRef.current = notifyKey
+      const minutesUntil = minutesUntilBlockStart(nextBlock, now, isNight)
+      if (minutesUntil < 0 || minutesUntil > NOTIFY_WINDOW_MINUTES) return
 
-    const message = `בעוד ${Math.max(minutesUntil, 0)} דקות אתה עובר לעמדה: ${nextTask}`
+      const notifyKey = `${board.id}:${nextBlock.time}:${nextTask}`
+      if (notifiedForRef.current === notifyKey) return
+      notifiedForRef.current = notifyKey
 
-    toast(message, { icon: '📍', duration: 8000 })
+      const title = '⚠️ שינוי עמדה קרוב'
+      const body = `בעוד ${Math.max(minutesUntil, 0)} דקות עובר/ת לעמדה: ${nextTask}`
 
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification('שינוי עמדה', { body: message })
+      toast(`${title} — ${body}`, { duration: 10000 })
+
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        new Notification(title, { body, tag: notifyKey })
+      }
     }
-  }, [isGuard, user, board, category, now])
+
+    check()
+    const interval = setInterval(check, CHECK_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [isGuard, user, profile, board, category])
 
   return null
 }
