@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { getActiveCategory, SHIFT_IDS_BY_CATEGORY, type ShiftCategory } from '../constants/shifts';
 import type { RosterBoard } from '../lib/rosterBoards';
@@ -11,11 +11,22 @@ interface ActiveBoardResult {
   refetch: () => void;
 }
 
+let instanceCounter = 0;
+
 export function useActiveBoard(): ActiveBoardResult {
   const [board, setBoard] = useState<RosterBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  // Supabase returns the same channel object for a topic that's already
+  // subscribed, so concurrent useActiveBoard() callers (e.g. ShiftLivePage
+  // and PositionChangeNotifier mounted at the same time) need distinct
+  // topic names or the second .subscribe() collides with the first.
+  const instanceIdRef = useRef<number | undefined>(undefined);
+  if (instanceIdRef.current === undefined) {
+    instanceCounter += 1;
+    instanceIdRef.current = instanceCounter;
+  }
 
   const category = getActiveCategory();
   const shiftIds = SHIFT_IDS_BY_CATEGORY[category];
@@ -45,7 +56,7 @@ export function useActiveBoard(): ActiveBoardResult {
     load();
 
     const channel = supabase
-      .channel(`roster-board-${category}-${tick}`)
+      .channel(`roster-board-${instanceIdRef.current}-${category}-${tick}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'roster_boards' }, (payload) => {
         if (payload.eventType === 'DELETE') {
           const deletedId = (payload.old as { id: string }).id;
