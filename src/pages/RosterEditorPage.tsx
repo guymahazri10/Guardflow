@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { usePublishRosterBoard, useRosterBoard, useUpdateRosterBoard } from '../hooks/useRosterBoards'
 import type { RosterBoardRow } from '../lib/rosterBoards'
@@ -12,11 +12,38 @@ import {
   renameColumn,
   updateCell,
 } from '../lib/rosterEditorUtils'
+import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
+import { SHIFT_CATEGORIES, getShiftById } from '../constants/shifts'
 
 const publishHelperText = 'כדי לפרסם צריך להוסיף לפחות תפקיד אחד ובלוק זמן אחד.'
 
 function getReadableError(error: unknown) {
   return error instanceof Error ? error.message : 'הפעולה נכשלה. נסה שוב.'
+}
+
+/** Next half-hour slot after the last row, wrapping past midnight. */
+function nextTimeSlot(rows: RosterBoardRow[]): string {
+  const lastTime = rows.length > 0 ? rows[rows.length - 1].time : '00:00'
+  const [h, m] = lastTime.split(':').map(Number)
+  const totalMinutes = (h * 60 + m + 30) % (24 * 60)
+  const nh = Math.floor(totalMinutes / 60)
+  const nm = totalMinutes % 60
+  return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`
+}
+
+function PageShell({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">{children}</div>
+}
+
+function TopBar({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="bg-white border-b border-border px-4 pt-5 pb-4 flex items-center justify-between">
+      <h1 className="text-xl font-bold text-text-primary">עורך לוז</h1>
+      <button onClick={onBack} className="text-sm font-medium text-primary flex items-center gap-1 active:opacity-70">
+        חזור לרשימה ←
+      </button>
+    </div>
+  )
 }
 
 export function RosterEditorPage() {
@@ -32,15 +59,20 @@ export function RosterEditorPage() {
   const [rows, setRows] = useState<RosterBoardRow[]>([])
   const [notes, setNotes] = useState('')
   const [published, setPublished] = useState(false)
-  const [newColumnName, setNewColumnName] = useState('')
-  const [newTimeLabel, setNewTimeLabel] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const cellInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const board = rosterBoardQuery.data ?? null
   const normalizedRows = useMemo(() => ensureRowsHaveAllColumns(cols, rows), [cols, rows])
   const canPublish = canPublishRosterBoard({ cols, rows: normalizedRows })
   const isSaving = updateRosterBoardMutation.isPending || publishRosterBoardMutation.isPending
-  const hasEditableStructure = cols.length > 0 && normalizedRows.length > 0
+
+  const shift = board ? getShiftById(board.shift_id) : undefined
+  const template = board ? findDefaultRosterTemplateByShiftId(board.shift_id) : null
+  const title = template?.label ?? (shift ? `משמרת ${SHIFT_CATEGORIES[shift.category].label}` : 'לו״ז')
+  const subtitle = template ? `${template.subLabel} · ${template.hours}` : ''
+  const typeLabel = shift ? `${SHIFT_CATEGORIES[shift.category].label} – ${template?.subLabel ?? ''}` : ''
 
   useEffect(() => {
     if (!board || loadedBoardId === board.id) {
@@ -53,26 +85,18 @@ export function RosterEditorPage() {
     setPublished(board.published)
     setLoadedBoardId(board.id)
     setActionError(null)
+    setIsEditing(false)
   }, [board, loadedBoardId])
 
   function handleAddColumn() {
-    const result = addColumn(cols, normalizedRows, newColumnName)
+    const name = `עמדה ${cols.length + 1}`
+    const result = addColumn(cols, normalizedRows, name)
     setCols(result.cols)
     setRows(result.rows)
-
-    if (result.cols !== cols) {
-      setNewColumnName('')
-    }
   }
 
   function handleRemoveColumn(columnName: string) {
     const result = removeColumn(cols, normalizedRows, columnName)
-    setCols(result.cols)
-    setRows(result.rows)
-  }
-
-  function handleRenameColumn(oldName: string, newName: string) {
-    const result = renameColumn(cols, normalizedRows, oldName, newName)
     setCols(result.cols)
     setRows(result.rows)
   }
@@ -85,16 +109,13 @@ export function RosterEditorPage() {
       return
     }
 
-    handleRenameColumn(oldName, trimmedValue)
+    const result = renameColumn(cols, normalizedRows, oldName, trimmedValue)
+    setCols(result.cols)
+    setRows(result.rows)
   }
 
   function handleAddTimeRow() {
-    const nextRows = addTimeRow(normalizedRows, newTimeLabel)
-    setRows(ensureRowsHaveAllColumns(cols, nextRows))
-
-    if (nextRows !== normalizedRows) {
-      setNewTimeLabel('')
-    }
+    setRows(ensureRowsHaveAllColumns(cols, addTimeRow(normalizedRows, nextTimeSlot(normalizedRows))))
   }
 
   function handleRemoveTimeRow(time: string) {
@@ -105,10 +126,20 @@ export function RosterEditorPage() {
     setRows(updateCell(normalizedRows, rowTime, columnName, value))
   }
 
-  async function handleSaveDraft() {
-    if (!boardId) {
-      return
+  function handleCellKeyDown(event: React.KeyboardEvent<HTMLInputElement>, ri: number, ci: number) {
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      const nextCi = ci + 1 < cols.length ? ci + 1 : 0
+      const nextRi = ci + 1 < cols.length ? ri : ri + 1
+      cellInputRefs.current[`${nextRi}-${nextCi}`]?.focus()
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      cellInputRefs.current[`${ri + 1}-${ci}`]?.focus()
     }
+  }
+
+  async function handleSaveDraft() {
+    if (!boardId) return
 
     setActionError(null)
 
@@ -116,12 +147,7 @@ export function RosterEditorPage() {
       const rowsToSave = ensureRowsHaveAllColumns(cols, normalizedRows)
       const updatedBoard = await updateRosterBoardMutation.mutateAsync({
         id: boardId,
-        input: {
-          cols,
-          rows: rowsToSave,
-          notes: notes.trim() ? notes : null,
-          published,
-        },
+        input: { cols, rows: rowsToSave, notes: notes.trim() ? notes : null, published },
       })
 
       setRows(ensureRowsHaveAllColumns(updatedBoard.cols, updatedBoard.rows))
@@ -134,9 +160,7 @@ export function RosterEditorPage() {
   }
 
   async function handleTogglePublished() {
-    if (!boardId) {
-      return
-    }
+    if (!boardId) return
 
     if (!published && !canPublish) {
       setActionError(publishHelperText)
@@ -150,19 +174,11 @@ export function RosterEditorPage() {
         const rowsToSave = ensureRowsHaveAllColumns(cols, normalizedRows)
         await updateRosterBoardMutation.mutateAsync({
           id: boardId,
-          input: {
-            cols,
-            rows: rowsToSave,
-            notes: notes.trim() ? notes : null,
-            published: false,
-          },
+          input: { cols, rows: rowsToSave, notes: notes.trim() ? notes : null, published: false },
         })
       }
 
-      const updatedBoard = await publishRosterBoardMutation.mutateAsync({
-        id: boardId,
-        published: !published,
-      })
+      const updatedBoard = await publishRosterBoardMutation.mutateAsync({ id: boardId, published: !published })
 
       setPublished(updatedBoard.published)
       setCols(updatedBoard.cols)
@@ -175,278 +191,250 @@ export function RosterEditorPage() {
 
   if (!boardId) {
     return (
-      <section dir="rtl" className="mx-auto w-full max-w-7xl px-4 py-6 text-right sm:px-6 lg:px-8">
-        <p className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700">חסר מזהה לו״ז לעריכה.</p>
-      </section>
+      <PageShell>
+        <TopBar onBack={() => navigate('/admin')} />
+        <div className="p-4">
+          <div className="card p-6 text-center text-sm text-text-secondary">חסר מזהה לו״ז לעריכה.</div>
+        </div>
+      </PageShell>
     )
   }
 
   if (rosterBoardQuery.isLoading) {
     return (
-      <section dir="rtl" className="mx-auto w-full max-w-7xl px-4 py-6 text-right sm:px-6 lg:px-8">
-        <p className="text-base text-slate-700">טוען לו״ז...</p>
-      </section>
+      <PageShell>
+        <TopBar onBack={() => navigate('/admin')} />
+        <div className="p-4">
+          <div className="card p-6 text-center text-sm text-text-secondary">טוען לו״ז...</div>
+        </div>
+      </PageShell>
     )
   }
 
-  if (rosterBoardQuery.isError) {
+  if (rosterBoardQuery.isError || !board) {
     return (
-      <section dir="rtl" className="mx-auto w-full max-w-7xl px-4 py-6 text-right sm:px-6 lg:px-8">
-        <p className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700">טעינת הלו״ז נכשלה.</p>
-      </section>
-    )
-  }
-
-  if (!board) {
-    return (
-      <section dir="rtl" className="mx-auto w-full max-w-7xl px-4 py-6 text-right sm:px-6 lg:px-8">
-        <p className="rounded border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">הלוז לא נמצא.</p>
-      </section>
+      <PageShell>
+        <TopBar onBack={() => navigate('/admin')} />
+        <div className="p-4">
+          <div className="card p-6 text-center text-sm text-text-secondary">
+            {rosterBoardQuery.isError ? 'טעינת הלו״ז נכשלה.' : 'הלו״ז לא נמצא.'}
+          </div>
+        </div>
+      </PageShell>
     )
   }
 
   return (
-    <section dir="rtl" className="mx-auto w-full max-w-7xl px-4 py-6 text-right sm:px-6 lg:px-8">
-      <header className="mb-5 rounded border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-bold text-slate-950 sm:text-3xl">עריכת לו״ז</h1>
-              <span
-                className={
-                  published
-                    ? 'rounded bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-800'
-                    : 'rounded bg-amber-100 px-3 py-1 text-sm font-medium text-amber-800'
-                }
-              >
-                {published ? 'פורסם' : 'טיוטה'}
-              </span>
-            </div>
-            <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <span className="block font-medium text-slate-800">מזהה משמרת</span>
-                <span>{board.shift_id}</span>
+    <PageShell>
+      <TopBar onBack={() => navigate('/admin')} />
+
+      <div className="px-4 pt-4">
+        {/* ── Hero card ── */}
+        <div className="rounded-card bg-slate-900 text-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <span
+              className={`text-[11px] font-bold rounded-badge px-2 py-0.5 shrink-0 ${
+                published ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {published ? '✅ פורסם' : 'טיוטה'}
+            </span>
+            <div className="flex-1 text-right min-w-0">
+              <div className="flex items-center gap-2 justify-end">
+                <p className="text-base font-bold truncate">{title}</p>
+                {shift && <span className="text-xl shrink-0">{shift.emoji}</span>}
               </div>
-              <div>
-                <span className="block font-medium text-slate-800">סוג משמרת</span>
-                <span>{board.shift_type}</span>
-              </div>
-              <div>
-                <span className="block font-medium text-slate-800">תפקידים</span>
-                <span>{cols.length}</span>
-              </div>
-              <div>
-                <span className="block font-medium text-slate-800">בלוקי זמן</span>
-                <span>{normalizedRows.length}</span>
-              </div>
+              {subtitle && <p className="text-sm text-slate-300 mt-1">{subtitle}</p>}
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => navigate('/admin')}
-            className="w-full rounded border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-800 sm:w-auto"
-          >
-            חזרה לניהול לו״זים
+          <div className="mt-3 inline-flex items-center gap-1.5 bg-white/10 rounded-badge px-3 py-1.5 text-xs font-semibold">
+            <span className="text-slate-300 font-normal">סוג משמרת:</span> {typeLabel}
+          </div>
+        </div>
+
+        {/* ── Status sentence ── */}
+        <p className="text-xs text-text-secondary leading-relaxed mt-3">
+          {published
+            ? '✅ הלוח פורסם ומוצג למאבטחים. תוכל לערוך ולפרסם מחדש בכל עת.'
+            : '📝 הלוח בטיוטה — עדיין לא מוצג למאבטחים.'}
+        </p>
+
+        {actionError && (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
+        )}
+
+        {/* ── Primary CTA / save-publish bar ── */}
+        {!isEditing ? (
+          <button onClick={() => setIsEditing(true)} className="btn-primary w-full h-14 mt-3 rounded-[14px] text-[15px]">
+            ערוך שיבוצים ✏️
           </button>
-        </div>
-      </header>
-
-      {actionError ? (
-        <p className="mb-4 rounded border border-red-200 bg-red-50 p-4 text-sm text-red-700">{actionError}</p>
-      ) : null}
-
-      <section className="mb-5 rounded border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:items-end">
-          <div>
-            <h2 className="mb-2 text-base font-semibold text-slate-900">הוספת תפקיד</h2>
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <input
-                type="text"
-                value={newColumnName}
-                onChange={(event) => setNewColumnName(event.target.value)}
-                placeholder="שם תפקיד"
-                className="min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base text-slate-900"
-              />
-              <button
-                type="button"
-                onClick={handleAddColumn}
-                className="min-h-11 rounded bg-slate-900 px-4 py-2 font-medium text-white sm:whitespace-nowrap"
-              >
-                הוסף תפקיד
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <h2 className="mb-2 text-base font-semibold text-slate-900">הוספת שורת זמן</h2>
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <input
-                type="text"
-                value={newTimeLabel}
-                onChange={(event) => setNewTimeLabel(event.target.value)}
-                placeholder="07:00"
-                className="min-h-11 w-full rounded border border-slate-300 px-3 py-2 text-base text-slate-900"
-                dir="ltr"
-              />
-              <button
-                type="button"
-                onClick={handleAddTimeRow}
-                className="min-h-11 rounded bg-slate-900 px-4 py-2 font-medium text-white sm:whitespace-nowrap"
-              >
-                הוסף שורת זמן
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row xl:min-w-72 xl:flex-col">
-            <button
-              type="button"
-              onClick={() => {
-                void handleSaveDraft()
-              }}
-              disabled={isSaving}
-              className="min-h-11 rounded bg-slate-900 px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-            >
-              שמור טיוטה
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                void handleTogglePublished()
-              }}
-              disabled={isSaving || (!published && !canPublish)}
-              className="min-h-11 rounded border border-slate-300 px-4 py-2 font-medium text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-            >
-              {published ? 'החזר לטיוטה' : 'פרסם'}
-            </button>
-          </div>
-        </div>
-        {!canPublish ? <p className="mt-3 text-sm text-slate-500">{publishHelperText}</p> : null}
-      </section>
-
-      <section className="mb-5 rounded border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-2 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900">מבנה לו״ז</h2>
-            <p className="mt-1 text-sm text-slate-500">עריכת תפקידים, בלוקי זמן ותוכן התאים.</p>
-          </div>
-          <div className="text-sm text-slate-600">
-            {cols.length} תפקידים · {normalizedRows.length} בלוקי זמן
-          </div>
-        </div>
-
-        {!hasEditableStructure ? (
-          <div className="p-6 text-center text-base text-slate-600">
-            כדי להתחיל, הוסף לפחות תפקיד אחד ושורת זמן אחת.
-          </div>
         ) : (
-          <div className="overflow-x-auto p-3 sm:p-4" dir="rtl">
-            <table className="w-max min-w-full border-separate border-spacing-0 text-base">
-              <thead>
-                <tr>
-                  <th className="sticky right-0 z-20 min-w-32 border border-slate-200 bg-slate-100 p-3 text-right font-semibold text-slate-800">
-                    זמן
-                  </th>
-                  {cols.map((col) => (
-                    <th key={col} className="min-w-56 border-y border-l border-slate-200 bg-slate-100 p-3 text-right align-top">
-                      <div className="flex min-w-52 flex-col gap-2">
-                        <input
-                          type="text"
-                          defaultValue={col}
-                          onBlur={(event) => handleColumnRenameBlur(col, event.currentTarget.value, event.currentTarget)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.currentTarget.blur()
-                            }
-                          }}
-                          className="min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-base font-medium text-slate-900"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveColumn(col)}
-                          className="rounded border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700"
-                        >
-                          מחק תפקיד
-                        </button>
-                      </div>
-                    </th>
-                  ))}
-                  <th className="min-w-28 border-y border-l border-slate-200 bg-slate-100 p-3 text-right font-semibold text-slate-800">
-                    פעולות
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {normalizedRows.map((row) => (
-                  <tr key={row.time}>
-                    <th className="sticky right-0 z-10 border-x border-b border-slate-200 bg-slate-50 p-3 text-right text-base font-semibold text-slate-800">
-                      {row.time}
-                    </th>
-                    {cols.map((col) => (
-                      <td key={`${row.time}-${col}`} className="border-b border-l border-slate-200 bg-white p-2.5">
-                        <input
-                          type="text"
-                          value={row.cells[col] ?? ''}
-                          onChange={(event) => handleUpdateCell(row.time, col, event.target.value)}
-                          className="min-h-11 w-full min-w-48 rounded border border-slate-300 px-3 py-2 text-base text-slate-900"
-                        />
-                      </td>
-                    ))}
-                    <td className="border-b border-l border-slate-200 bg-white p-2.5">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTimeRow(row.time)}
-                        className="min-h-10 rounded border border-red-200 px-3 py-2 text-sm font-medium text-red-700"
-                      >
-                        מחק שורה
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-2 mt-3">
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  void handleSaveDraft()
+                }}
+                disabled={isSaving}
+                className="btn-primary flex-1 h-12 rounded-xl disabled:opacity-50"
+              >
+                {isSaving ? 'שומר...' : 'שמור טיוטה'}
+              </button>
+              <button
+                onClick={() => {
+                  void handleTogglePublished()
+                }}
+                disabled={isSaving || (!published && !canPublish)}
+                title={!published && !canPublish ? publishHelperText : undefined}
+                className="flex-1 h-12 rounded-xl text-sm font-semibold text-primary bg-primary-light border border-primary/20 disabled:opacity-40"
+              >
+                {published ? 'החזר לטיוטה' : 'פרסם'}
+              </button>
+              <button
+                onClick={() => setIsEditing(false)}
+                className="h-12 px-4 rounded-xl border border-border text-text-secondary text-sm font-medium"
+              >
+                סיום
+              </button>
+            </div>
+            {!canPublish && <p className="text-xs text-text-muted">{publishHelperText}</p>}
           </div>
         )}
-      </section>
+      </div>
 
-      <section className="mb-5 rounded border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <label className="block text-base font-semibold text-slate-900">
-          הערות
+      {/* ── Notes ── */}
+      {isEditing ? (
+        <div className="px-4 mt-4">
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
-            rows={4}
-            className="mt-3 w-full rounded border border-slate-300 px-3 py-2 text-base text-slate-900"
+            placeholder="הערות למשמרת (אופציונלי)..."
+            rows={2}
+            className="input-field w-full resize-none"
           />
-        </label>
-      </section>
-
-      <footer className="rounded border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        {!canPublish ? <p className="mb-3 text-sm text-slate-500">{publishHelperText}</p> : null}
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={() => {
-              void handleSaveDraft()
-            }}
-            disabled={isSaving}
-            className="min-h-11 rounded bg-slate-900 px-5 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-          >
-            שמור טיוטה
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              void handleTogglePublished()
-            }}
-            disabled={isSaving || (!published && !canPublish)}
-            className="min-h-11 rounded border border-slate-300 px-5 py-2 font-medium text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-          >
-            {published ? 'החזר לטיוטה' : 'פרסם'}
-          </button>
         </div>
-      </footer>
-    </section>
+      ) : notes ? (
+        <div className="px-4 mt-4">
+          <div className="card p-3.5 text-sm text-text-secondary">{notes}</div>
+        </div>
+      ) : null}
+
+      {/* ── Spreadsheet ── */}
+      <div className="px-4 mt-4 pb-6">
+        <div className="rounded-xl border border-border overflow-hidden">
+          <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: '60vh' }} dir="rtl">
+            <table className="border-collapse text-xs" style={{ minWidth: '100%' }}>
+              <thead>
+                <tr className="bg-slate-900 text-white sticky top-0 z-[3]">
+                  <th className="w-9 px-1.5 py-2 border-l border-slate-700 text-[10px] text-slate-400 font-normal sticky right-0 bg-slate-900 z-[4]">
+                    #
+                  </th>
+                  <th className="min-w-[64px] px-2.5 py-2 border-l border-slate-700 font-bold text-[11px] text-blue-300 sticky right-9 bg-slate-900 z-[4]">
+                    שעה
+                  </th>
+                  {cols.map((col) => (
+                    <th key={col} className="min-w-[140px] p-0 border-l border-slate-700">
+                      {isEditing ? (
+                        <div className="flex items-center">
+                          <input
+                            defaultValue={col}
+                            onBlur={(event) => handleColumnRenameBlur(col, event.currentTarget.value, event.currentTarget)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') event.currentTarget.blur()
+                            }}
+                            className="flex-1 min-w-0 bg-transparent border-none outline-none text-white font-bold text-[11px] px-1.5 py-2 text-center"
+                          />
+                          <button
+                            onClick={() => handleRemoveColumn(col)}
+                            className="text-slate-400 active:text-red-400 px-1.5 shrink-0"
+                            aria-label={`מחק תפקיד ${col}`}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="px-2.5 py-2 text-[11px] font-bold text-center">{col}</div>
+                      )}
+                    </th>
+                  ))}
+                  {isEditing && (
+                    <th className="w-10 p-1.5">
+                      <button
+                        onClick={handleAddColumn}
+                        className="border border-dashed border-slate-500 text-slate-300 rounded px-2 py-0.5 text-sm leading-none"
+                        aria-label="הוסף תפקיד"
+                      >
+                        +
+                      </button>
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {normalizedRows.map((row, ri) => {
+                  const stripeBg = ri % 2 === 0 ? 'bg-white' : 'bg-background'
+
+                  return (
+                    <tr key={row.time} className={stripeBg}>
+                      <td className={`text-center text-[10px] text-text-muted border-l border-b border-border sticky right-0 z-[2] ${stripeBg}`}>
+                        {ri + 1}
+                      </td>
+                      <td className="border-l-2 border-primary/30 border-b border-border sticky right-9 z-[2] bg-primary-light">
+                        <div className="text-center font-mono font-extrabold text-primary py-1.5">{row.time}</div>
+                      </td>
+                      {cols.map((col, ci) => (
+                        <td key={col} className="border-l border-b border-border p-0">
+                          {isEditing ? (
+                            <input
+                              ref={(element) => {
+                                cellInputRefs.current[`${ri}-${ci}`] = element
+                              }}
+                              value={row.cells[col] ?? ''}
+                              onChange={(event) => handleUpdateCell(row.time, col, event.target.value)}
+                              onKeyDown={(event) => handleCellKeyDown(event, ri, ci)}
+                              placeholder="—"
+                              className="w-full min-w-[140px] px-2 py-1.5 border-none outline-none bg-transparent text-xs focus:bg-yellow-50"
+                            />
+                          ) : (
+                            <div className="px-2 py-1.5 text-xs min-h-[28px]">{row.cells[col] || ''}</div>
+                          )}
+                        </td>
+                      ))}
+                      {isEditing && (
+                        <td className="text-center p-1 border-b border-border">
+                          <button
+                            onClick={() => handleRemoveTimeRow(row.time)}
+                            className="text-text-muted active:text-red-500 px-1"
+                            aria-label={`מחק שורת ${row.time}`}
+                          >
+                            🗑
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+                {isEditing && (
+                  <tr>
+                    <td colSpan={cols.length + 3} className="p-2">
+                      <button
+                        onClick={handleAddTimeRow}
+                        className="flex items-center gap-1 text-xs text-text-secondary border border-dashed border-border rounded px-3 py-1.5"
+                      >
+                        + הוסף שורה
+                      </button>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {normalizedRows.length === 0 && (
+          <p className="text-center text-sm text-text-muted mt-3">אין עדיין בלוקי זמן. לחץ "ערוך שיבוצים" כדי להתחיל.</p>
+        )}
+      </div>
+    </PageShell>
   )
 }
