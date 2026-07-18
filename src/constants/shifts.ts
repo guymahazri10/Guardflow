@@ -84,3 +84,16 @@ export function getShiftById(id: string): ShiftConfig | undefined {
 export function getShiftsByCategory(category: ShiftCategory): ShiftConfig[] {
   return SHIFTS.filter((s) => s.category === category);
 }
+
+/** Strip the category name from a shift's label: "בוקר 6 מאבטחים" → "6 מאבטחים" */
+export function getShiftShortLabel(shift: ShiftConfig): string {
+  const cat = SHIFT_CATEGORIES[shift.category].label;
+  const stripped = shift.label.replace(cat, '').trim();
+  return stripped || shift.label;
+}
+
+/** "07:00–15:00" from startHour / endHour */
+export function getShiftHoursLabel(shift: ShiftConfig): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(shift.startHour)}:00–${p(shift.endHour)}:00`;
+}

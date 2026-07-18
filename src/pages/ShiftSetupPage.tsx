@@ -4,11 +4,12 @@ import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 import {
   getActiveCategory,
+  getShiftHoursLabel,
+  getShiftShortLabel,
   getShiftsByCategory,
   SHIFT_CATEGORIES,
   SHIFT_IDS_BY_CATEGORY,
   type ShiftCategory,
-  type ShiftConfig,
 } from '../constants/shifts'
 import { useRosterBoardsByShiftId, useUpdateGuardNames } from '../hooks/useRosterBoards'
 import { useProfiles } from '../hooks/useProfiles'
@@ -16,19 +17,6 @@ import type { ProfileListItem } from '../lib/profiles'
 import type { GuardAssignment, RosterBoard } from '../lib/rosterBoards'
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
-
-/** Strip category name from label: "בוקר 6 מאבטחים" → "6 מאבטחים" */
-function shortLabel(shift: ShiftConfig): string {
-  const cat = SHIFT_CATEGORIES[shift.category].label
-  const stripped = shift.label.replace(cat, '').trim()
-  return stripped || shift.label
-}
-
-/** "07:00–15:00" from startHour / endHour */
-function hoursLabel(shift: ShiftConfig): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(shift.startHour)}:00–${p(shift.endHour)}:00`
-}
 
 /** Among boards sharing a shift_id, edit the published one; fall back to the newest draft. */
 function pickBoardToEdit(boards: RosterBoard[]): RosterBoard | null {
@@ -215,14 +203,14 @@ export function ShiftSetupPage() {
                         selected ? 'text-primary' : 'text-text-primary'
                       }`}
                     >
-                      {shortLabel(shift)}
+                      {getShiftShortLabel(shift)}
                     </p>
                     <p
                       className="text-[11px] text-text-muted mt-0.5 tabular-nums"
                       style={{ fontFamily: 'JetBrains Mono, monospace' }}
                       dir="ltr"
                     >
-                      {hoursLabel(shift)}
+                      {getShiftHoursLabel(shift)}
                     </p>
                   </div>
                 </div>
