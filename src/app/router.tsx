@@ -3,6 +3,7 @@ import { AppShell } from '../components/AppShell'
 import { AdminRoute } from '../components/routes/AdminRoute'
 import { LoadingSplash, ProtectedRoute } from '../components/routes/ProtectedRoute'
 import { useAuth } from '../contexts/AuthContext'
+import { AcceptInvitePage } from '../pages/AcceptInvitePage'
 import { AdminPanelPage } from '../pages/AdminPanelPage'
 import { LoginPage } from '../pages/LoginPage'
 import { ProfilePage } from '../pages/ProfilePage'
@@ -15,6 +16,7 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
+      <Route path="/accept-invite" element={<AcceptInvitePage />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path="/shift-live" element={<ShiftLivePage />} />

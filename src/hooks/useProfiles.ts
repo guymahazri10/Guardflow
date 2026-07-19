@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchProfiles, setUserAppRole, setUserFullName, type ProfileListItem } from '../lib/profiles'
+import {
+  deleteUser,
+  fetchProfiles,
+  inviteUser,
+  setUserAppRole,
+  setUserFullName,
+  type InviteUserInput,
+  type ProfileListItem,
+} from '../lib/profiles'
 import type { AppRole } from '../contexts/AuthContext'
 
 export const profileKeys = {
@@ -41,6 +49,28 @@ export function useSetUserFullName() {
 
   return useMutation<ProfileListItem, Error, SetUserFullNameVariables>({
     mutationFn: ({ userId, newFullName }) => setUserFullName(userId, newFullName),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: profileKeys.list() })
+    },
+  })
+}
+
+export function useInviteUser() {
+  const queryClient = useQueryClient()
+
+  return useMutation<{ id: string; email: string }, Error, InviteUserInput>({
+    mutationFn: inviteUser,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: profileKeys.list() })
+    },
+  })
+}
+
+export function useDeleteUser() {
+  const queryClient = useQueryClient()
+
+  return useMutation<void, Error, string>({
+    mutationFn: deleteUser,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: profileKeys.list() })
     },
