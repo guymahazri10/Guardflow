@@ -7,6 +7,7 @@ interface NavItem {
   label: string;
   icon: (active: boolean) => ReactElement;
   adminOnly?: boolean;
+  editorOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -23,6 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     to: '/shift-setup',
     label: 'הגדרות',
+    editorOnly: true,
     icon: (active) => (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={active ? '#116dff' : '#6b7280'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -69,9 +71,13 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export default function BottomNav() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isCommander } = useAuth();
 
-  const visibleItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.adminOnly && !isAdmin) return false;
+    if (item.editorOnly && !isAdmin && !isCommander) return false;
+    return true;
+  });
 
   return (
     <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-border safe-bottom z-50">

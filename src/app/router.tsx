@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
 import { AdminRoute } from '../components/routes/AdminRoute'
+import { EditorRoute } from '../components/routes/EditorRoute'
 import { LoadingSplash, ProtectedRoute } from '../components/routes/ProtectedRoute'
 import { useAuth } from '../contexts/AuthContext'
 import { AcceptInvitePage } from '../pages/AcceptInvitePage'
@@ -20,8 +21,10 @@ export function AppRouter() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path="/shift-live" element={<ShiftLivePage />} />
-          <Route path="/shift-setup" element={<ShiftSetupPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route element={<EditorRoute />}>
+            <Route path="/shift-setup" element={<ShiftSetupPage />} />
+          </Route>
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<AdminPanelPage />} />
             <Route path="/roster-editor" element={<RosterEditorPage />} />
