@@ -223,14 +223,6 @@ export function ShiftSetupPage() {
             ))}
           </div>
         )}
-
-        {/* Read-only notice for guards */}
-        {!canEdit && (
-          <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-            <span className="text-base shrink-0">👁️</span>
-            <p className="text-amber-700 text-xs font-medium leading-snug">תצוגה בלבד — אין לך הרשאה לערוך שמות</p>
-          </div>
-        )}
       </div>
 
       {/* ── Sticky CTA ── */}
