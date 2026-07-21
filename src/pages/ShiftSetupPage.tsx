@@ -16,6 +16,7 @@ import { useProfiles } from '../hooks/useProfiles'
 import type { ProfileListItem } from '../lib/profiles'
 import type { GuardAssignment, RosterBoard } from '../lib/rosterBoards'
 import GuardNameInput from '../components/ui/GuardNameInput'
+import { ClipboardIcon } from '../components/ui/StateIcon'
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
@@ -187,11 +188,7 @@ export function ShiftSetupPage() {
                     >
                       {getShiftShortLabel(shift)}
                     </p>
-                    <p
-                      className="text-[11px] text-text-muted mt-0.5 tabular-nums"
-                      style={{ fontFamily: 'JetBrains Mono, monospace' }}
-                      dir="ltr"
-                    >
+                    <p className="text-[11px] text-text-muted mt-0.5 tabular-nums" dir="ltr">
                       {getShiftHoursLabel(shift)}
                     </p>
                   </div>
@@ -302,7 +299,9 @@ function InputSkeleton() {
 function NoBoardState() {
   return (
     <div className="card p-6 text-center mt-2">
-      <p className="text-3xl mb-2">🗒️</p>
+      <div className="w-11 h-11 rounded-full bg-primary-light flex items-center justify-center mx-auto mb-3 text-text-secondary">
+        <ClipboardIcon />
+      </div>
       <p className="font-semibold text-text-primary">אין לוח משמרת</p>
       <p className="text-text-secondary text-sm mt-1.5 leading-relaxed">המנהל צריך ליצור את הלוז תחילה</p>
     </div>
@@ -312,7 +311,9 @@ function NoBoardState() {
 function NoColsState() {
   return (
     <div className="card p-6 text-center mt-2">
-      <p className="text-3xl mb-2">📋</p>
+      <div className="w-11 h-11 rounded-full bg-primary-light flex items-center justify-center mx-auto mb-3 text-text-secondary">
+        <ClipboardIcon />
+      </div>
       <p className="font-semibold text-text-primary">לוח ריק</p>
       <p className="text-text-secondary text-sm mt-1.5">לא מוגדרים תפקידים בלוח זה</p>
     </div>

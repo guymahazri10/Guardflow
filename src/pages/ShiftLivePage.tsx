@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useClock, formatHHMM } from '../hooks/useClock'
 import { useActiveBoard } from '../hooks/useActiveBoard'
 import GuardCard from '../components/ui/GuardCard'
+import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftById, getShiftHoursLabel } from '../constants/shifts'
 import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
 import { getCurrentBlock } from '../lib/shiftBlocks'
@@ -29,10 +30,8 @@ export function ShiftLivePage() {
     <div className="flex flex-col flex-1 gap-0 max-w-mobile mx-auto w-full">
       {/* ── Clock hero ── */}
       <div className="bg-white border-b border-border px-4 py-6 flex flex-col items-center">
-        <p
-          className="text-[52px] font-extrabold leading-none tracking-tight text-text-primary"
-          style={{ fontFamily: 'JetBrains Mono, monospace' }}
-        >
+        <span className="text-[11px] font-bold text-text-secondary mb-1">• פעיל עכשיו</span>
+        <p className="text-[52px] font-black leading-none tracking-tight text-text-primary tabular-nums">
           {formatHHMM(now)}
         </p>
         <div className="flex items-center gap-1.5 mt-2.5">
@@ -88,7 +87,7 @@ function NowTab({
   currentBlock: RosterBoardRow | null
 }) {
   if (!currentBlock) {
-    return <Placeholder icon="⏱️" text="אין בלוק זמן פעיל כרגע" />
+    return <Placeholder icon={<ClockIcon />} text="אין בלוק זמן פעיל כרגע" />
   }
 
   return (
@@ -96,7 +95,7 @@ function NowTab({
       {/* Shift-wide hours already shown in the clock hero above — this only
           needs the active-guard count, not another time range. */}
       <div className="flex items-center justify-end px-0.5">
-        <span className="text-[11px] font-bold text-primary bg-primary-light rounded-full px-2.5 py-1">
+        <span className="text-[11px] font-bold text-white bg-primary rounded-full px-2.5 py-1">
           {cols.length} פעיל
         </span>
       </div>
@@ -112,7 +111,7 @@ function NowTab({
         ))}
       </div>
 
-      {cols.length === 0 && <Placeholder icon="📋" text="אין תפקידים מוגדרים בלוח זה" />}
+      {cols.length === 0 && <Placeholder icon={<ClipboardIcon />} text="אין תפקידים מוגדרים בלוח זה" />}
     </div>
   )
 }
@@ -132,7 +131,7 @@ function AllShiftTab({
   const currentIndex = currentBlock ? allRows.findIndex((row) => row.time === currentBlock.time) : -1
   const rows = currentIndex >= 0 ? allRows.slice(currentIndex) : allRows
 
-  if (!rows.length) return <Placeholder icon="📋" text="אין לוח זמנים לתצוגה" />
+  if (!rows.length) return <Placeholder icon={<ClipboardIcon />} text="אין לוח זמנים לתצוגה" />
 
   return (
     <div className="flex flex-col gap-5 pb-4">
@@ -144,8 +143,7 @@ function AllShiftTab({
           <div key={row.time}>
             <div className="flex items-center justify-between gap-2 mb-2 px-0.5">
               <span
-                className={`text-sm font-extrabold ${isCurrent ? 'text-primary' : 'text-text-secondary'}`}
-                style={{ fontFamily: 'JetBrains Mono, monospace' }}
+                className={`text-sm font-extrabold tabular-nums ${isCurrent ? 'text-primary' : 'text-text-secondary'}`}
               >
                 {row.time}
                 {nextTime ? ` – ${nextTime}` : ''}
@@ -193,7 +191,9 @@ function LoadingSkeleton() {
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="card p-6 text-center">
-      <p className="text-3xl mb-2">⚠️</p>
+      <div className="w-11 h-11 rounded-full bg-danger-light flex items-center justify-center mx-auto mb-3 text-danger">
+        <AlertIcon />
+      </div>
       <p className="font-semibold text-text-primary">שגיאה בטעינת הנתונים</p>
       <p className="text-text-secondary text-xs mt-1 mb-4">{message}</p>
       <button onClick={onRetry} className="btn-primary px-6">
@@ -206,7 +206,9 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 function EmptyState({ categoryLabel, hours }: { categoryLabel: string; hours: string }) {
   return (
     <div className="card p-8 text-center">
-      <p className="text-4xl mb-3">📋</p>
+      <div className="w-11 h-11 rounded-full bg-primary-light flex items-center justify-center mx-auto mb-3 text-text-secondary">
+        <ClipboardIcon />
+      </div>
       <p className="font-semibold text-text-primary">אין לוח משמרת פעיל</p>
       <p className="text-text-secondary text-sm mt-1.5">לא נמצא לוח מפורסם למשמרת {categoryLabel}</p>
       <p className="text-text-muted text-xs mt-1">{hours}</p>
@@ -215,10 +217,10 @@ function EmptyState({ categoryLabel, hours }: { categoryLabel: string; hours: st
   )
 }
 
-function Placeholder({ icon, text }: { icon: string; text: string }) {
+function Placeholder({ icon, text }: { icon: ReactNode; text: string }) {
   return (
     <div className="text-center py-12">
-      <p className="text-3xl mb-2">{icon}</p>
+      <div className="flex items-center justify-center mb-2 text-text-muted">{icon}</div>
       <p className="text-text-muted text-sm">{text}</p>
     </div>
   )

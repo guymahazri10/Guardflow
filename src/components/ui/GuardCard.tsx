@@ -8,7 +8,8 @@ interface GuardCardProps {
 }
 
 export default function GuardCard({ role, guardName, task, dim }: GuardCardProps) {
-  const badgeStyle = getPositionBadgeStyle(task || '—')
+  const assigned = !!guardName
+  const badgeStyle = getPositionBadgeStyle(task || '—', assigned)
 
   return (
     <div
@@ -16,8 +17,7 @@ export default function GuardCard({ role, guardName, task, dim }: GuardCardProps
         dim ? 'opacity-45 shadow-none' : ''
       }`}
     >
-      <span className="text-[11px] font-semibold text-text-muted shrink-0 w-16 text-right truncate">{role}</span>
-      <div className="w-px h-7 bg-border shrink-0" />
+      <span className="text-[11px] font-semibold text-text-muted shrink-0 max-w-[4.5rem] text-right truncate">{role}</span>
       <span className="text-[15px] font-extrabold text-text-primary flex-1 min-w-0 truncate">
         {guardName || <span className="text-text-muted font-medium italic text-sm">לא הוגדר</span>}
       </span>

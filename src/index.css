@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,15 +7,15 @@
 @layer base {
   html {
     direction: rtl;
-    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-family: 'Heebo', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
     margin: 0;
-    background-color: #f4f6fb;
-    color: #111827;
+    background-color: #F7F8FA;
+    color: #15171A;
     /* Prevent horizontal scroll on mobile */
     overflow-x: hidden;
   }
@@ -37,32 +37,32 @@
 
 @layer components {
   .card {
-    @apply bg-white rounded-card shadow-card;
+    @apply bg-white rounded-card shadow-card border border-border;
   }
 
   .btn-primary {
-    @apply bg-primary text-white font-semibold rounded-xl px-5 py-3 text-sm
-           active:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed
-           transition-opacity;
+    @apply bg-primary text-white font-bold rounded-full px-5 py-3 text-sm
+           active:bg-primary-dark active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100
+           transition-all;
   }
 
   .btn-ghost {
-    @apply text-primary font-medium rounded-xl px-4 py-2 text-sm
+    @apply text-primary font-semibold rounded-full px-4 py-2 text-sm border border-primary/70
            active:bg-primary-light transition-colors;
   }
 
   .input-field {
-    @apply w-full bg-background border border-border rounded-xl px-4 py-3 text-sm
+    @apply w-full bg-white border border-border rounded-xl px-4 py-3 text-sm
            placeholder:text-text-muted focus:outline-none focus:ring-2
-           focus:ring-primary/30 focus:border-primary transition;
+           focus:ring-primary-200 focus:border-primary transition;
   }
 
   .tab-active {
-    @apply text-primary border-b-2 border-primary font-semibold;
+    @apply text-primary border-b-2 border-primary font-extrabold;
   }
 
   .tab-inactive {
-    @apply text-text-secondary;
+    @apply text-text-secondary font-medium;
   }
 
   /* Safe-area padding for iOS bottom bar */

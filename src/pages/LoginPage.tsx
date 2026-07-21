@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import logoFull from '../assets/logo_full.png'
 
 export function LoginPage() {
   const { signIn } = useAuth()
@@ -24,14 +25,13 @@ export function LoginPage() {
   }
 
   return (
-    <section dir="rtl" className="mx-auto flex min-h-[70vh] w-full max-w-md items-center px-4 py-8 text-right">
-      <form onSubmit={handleSubmit} className="w-full space-y-5">
-        <div>
-          <h2 className="mb-2 text-2xl font-bold text-slate-900">התחברות</h2>
-          <p className="text-sm text-slate-600">כניסה למערכת GuardFlow עם חשבון Supabase.</p>
+    <section dir="rtl" className="mx-auto flex min-h-[80vh] w-full max-w-mobile items-center px-6 py-8">
+      <form onSubmit={handleSubmit} className="w-full space-y-4">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <img src={logoFull} alt="GuardFlow" className="h-auto w-[150px]" />
         </div>
 
-        <label className="block text-sm font-medium text-slate-700">
+        <label className="block text-xs font-bold text-text-secondary">
           אימייל
           <input
             type="email"
@@ -40,12 +40,12 @@ export function LoginPage() {
             required
             autoComplete="email"
             disabled={submitting}
-            className="mt-2 w-full rounded border border-slate-300 px-3 py-2 text-left text-slate-900 disabled:bg-slate-100"
+            className="input-field mt-2 text-left"
             dir="ltr"
           />
         </label>
 
-        <label className="block text-sm font-medium text-slate-700">
+        <label className="block text-xs font-bold text-text-secondary">
           סיסמה
           <input
             type="password"
@@ -54,18 +54,14 @@ export function LoginPage() {
             required
             autoComplete="current-password"
             disabled={submitting}
-            className="mt-2 w-full rounded border border-slate-300 px-3 py-2 text-left text-slate-900 disabled:bg-slate-100"
+            className="input-field mt-2 text-left"
             dir="ltr"
           />
         </label>
 
-        {errorMessage ? <p className="text-sm font-medium text-red-700">{errorMessage}</p> : null}
+        {errorMessage ? <p className="text-sm font-medium text-danger">{errorMessage}</p> : null}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded bg-slate-900 px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-        >
+        <button type="submit" disabled={submitting} className="btn-primary w-full !py-3.5 text-[15px]">
           {submitting ? 'מתחבר...' : 'התחבר'}
         </button>
       </form>

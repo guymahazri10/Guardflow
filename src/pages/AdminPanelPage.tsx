@@ -4,6 +4,7 @@ import { useCreateRosterBoard, useDeleteRosterBoard, useRosterBoards } from '../
 import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
 import { SHIFT_CATEGORIES, SHIFTS, getShiftHoursLabel, type ShiftConfig } from '../constants/shifts'
 import type { RosterBoard } from '../lib/rosterBoards'
+import { ClipboardIcon } from '../components/ui/StateIcon'
 
 type ShiftDisplay = {
   shift: ShiftConfig
@@ -145,19 +146,19 @@ export function AdminPanelPage() {
       {/* ── Helper text ── */}
       <div className="px-4 pt-3 pb-1">
         <p className="text-xs text-text-secondary leading-relaxed">
-          📋 <strong className="text-text-primary font-semibold">בחר משמרת מהרשימה</strong> ולאחר מכן לחץ{' '}
+          <strong className="text-text-primary font-semibold">בחר משמרת מהרשימה</strong> ולאחר מכן לחץ{' '}
           <strong className="text-text-primary font-semibold">פתח לוז</strong> כדי לערוך שיבוצים ולפרסם.
         </p>
       </div>
 
       {actionError && (
-        <div className="mx-4 mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mx-4 mt-3 rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
           {actionError}
         </div>
       )}
 
       {rosterBoardsQuery.isError && (
-        <div className="mx-4 mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mx-4 mt-3 rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
           טעינת הלו״זים נכשלה. נסה לרענן את העמוד.
         </div>
       )}
@@ -182,8 +183,6 @@ export function AdminPanelPage() {
                   selected ? 'ring-2 ring-primary' : ''
                 }`}
               >
-                <span className="text-2xl shrink-0">{shift.emoji}</span>
-
                 <div className="flex-1 text-right min-w-0">
                   <p className="text-sm font-bold text-text-primary">{title}</p>
                   <p className="text-xs text-text-muted mt-0.5">{subtitle}</p>
@@ -191,11 +190,11 @@ export function AdminPanelPage() {
 
                 <div className="flex flex-col items-end gap-1.5 shrink-0">
                   {board.published ? (
-                    <span className="text-[11px] font-bold bg-green-100 text-green-800 rounded-badge px-2 py-0.5">
-                      ✅ פורסם
+                    <span className="text-[11px] font-bold bg-good-light text-good rounded-badge px-2 py-0.5">
+                      פורסם
                     </span>
                   ) : (
-                    <span className="text-[11px] font-semibold bg-amber-100 text-amber-800 rounded-badge px-2 py-0.5">
+                    <span className="text-[11px] font-semibold bg-warning-light text-warning rounded-badge px-2 py-0.5">
                       טיוטה
                     </span>
                   )}
@@ -204,7 +203,7 @@ export function AdminPanelPage() {
                     onClick={(event) => {
                       void handleDelete(board, event)
                     }}
-                    className={`text-[11px] font-medium text-red-500 active:opacity-70 ${
+                    className={`text-[11px] font-medium text-danger active:opacity-70 ${
                       isDeleting ? 'pointer-events-none opacity-40' : ''
                     }`}
                   >
@@ -273,7 +272,6 @@ export function AdminPanelPage() {
                     }}
                     className="w-full flex items-center gap-3 px-5 py-3.5 min-h-14 text-right disabled:opacity-50"
                   >
-                    <span className="text-xl w-8 text-center shrink-0">{shift.emoji}</span>
                     <div className="flex-1">
                       <div className="text-sm font-bold text-text-primary">{title}</div>
                       <div className="text-[11px] text-text-muted mt-0.5">{subtitle}</div>
@@ -281,8 +279,8 @@ export function AdminPanelPage() {
                     {creating ? (
                       <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
                     ) : exists ? (
-                      <span className="text-[11px] font-bold text-green-600 bg-green-50 border border-green-200 rounded-badge px-2 py-0.5 shrink-0">
-                        קיים ✓
+                      <span className="text-[11px] font-bold text-good bg-good-light border border-good/20 rounded-badge px-2 py-0.5 shrink-0">
+                        קיים
                       </span>
                     ) : (
                       <span className="text-[11px] text-text-muted shrink-0">+ חדש</span>
@@ -317,7 +315,9 @@ function ListSkeleton() {
 function EmptyState() {
   return (
     <div className="card p-8 text-center mt-2">
-      <p className="text-4xl mb-3">📋</p>
+      <div className="w-11 h-11 rounded-full bg-primary-light flex items-center justify-center mx-auto mb-3 text-text-secondary">
+        <ClipboardIcon />
+      </div>
       <p className="font-semibold text-text-primary">אין לוזים עדיין</p>
       <p className="text-text-secondary text-sm mt-1.5 leading-relaxed">
         לחץ על <strong className="text-text-primary font-semibold">לוז חדש</strong> למעלה כדי להתחיל.

@@ -7,9 +7,9 @@ import type { ProfileListItem } from '../lib/profiles'
 const APP_ROLES: AppRole[] = ['מנהל', 'אחמ"ש', 'מאבטח']
 
 const ROLE_COLORS: Record<AppRole, { bg: string; color: string; border: string }> = {
-  מנהל: { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' },
-  'אחמ"ש': { bg: '#f0fdf4', color: '#15803d', border: '#bbf7d0' },
-  מאבטח: { bg: '#f8fafc', color: '#475569', border: '#e2e8f0' },
+  מנהל: { bg: '#D4A24A', color: '#15171A', border: 'transparent' },
+  'אחמ"ש': { bg: '#E8EFF8', color: '#1B56A5', border: 'transparent' },
+  מאבטח: { bg: '#F1F3F5', color: '#6F7782', border: 'transparent' },
 }
 
 const ROLE_DESCRIPTIONS: Record<AppRole, string> = {
@@ -100,12 +100,11 @@ export function UserManagementPage() {
     <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
       {/* ── Header ── */}
       <div className="bg-white border-b border-border px-4 pt-5 pb-4 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-text-primary">ניהול משתמשים והרשאות</h1>
-          <p className="text-text-secondary text-sm mt-0.5">צפייה במשתמשים, עדכון תפקידים ושמות</p>
-        </div>
-        <button onClick={() => setInviteSheetOpen(true)} className="btn-primary shrink-0 whitespace-nowrap">
-          + הזמן משתמש
+        <h1 className="text-lg">
+          <span className="font-light text-text-secondary">ניהול</span> <b className="font-extrabold">משתמשים</b>
+        </h1>
+        <button onClick={() => setInviteSheetOpen(true)} className="btn-primary shrink-0 whitespace-nowrap !px-4 !py-2.5 text-[13px]">
+          + הזמן
         </button>
       </div>
 
@@ -132,11 +131,11 @@ export function UserManagementPage() {
         </div>
 
         {actionError && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{actionError}</div>
+          <div className="rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">{actionError}</div>
         )}
 
         {profilesQuery.isError && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
             טעינת המשתמשים נכשלה. נסה לרענן את העמוד.
           </div>
         )}
@@ -233,8 +232,8 @@ function UserRow({
 
   return (
     <div className="card flex items-center gap-2.5 px-3.5 py-3 min-h-[72px]">
-      <div className="w-11 h-11 rounded-full bg-primary-light flex items-center justify-center shrink-0">
-        <span className="text-primary font-extrabold text-base">{name[0]?.toUpperCase() ?? '?'}</span>
+      <div className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shrink-0">
+        <span className="text-white font-extrabold text-base">{name[0]?.toUpperCase() ?? '?'}</span>
       </div>
 
       <div className="flex-1 min-w-0">
@@ -277,7 +276,7 @@ function UserRow({
           onClick={onOpenDeleteSheet}
           disabled={pending}
           aria-label="מחק משתמש"
-          className="w-10 h-10 rounded-lg bg-background border border-border flex items-center justify-center shrink-0 text-red-500 disabled:opacity-50"
+          className="w-10 h-10 rounded-lg bg-background border border-border flex items-center justify-center shrink-0 text-danger disabled:opacity-50"
         >
           🗑️
         </button>
@@ -501,7 +500,7 @@ function DeleteUserSheet({
           <button
             onClick={onConfirm}
             disabled={deleting}
-            className="flex-1 h-12 rounded-xl bg-red-500 text-white font-semibold text-sm disabled:opacity-50"
+            className="flex-1 h-12 rounded-xl bg-danger text-white font-semibold text-sm disabled:opacity-50"
           >
             {deleting ? 'מוחק...' : 'מחק משתמש'}
           </button>

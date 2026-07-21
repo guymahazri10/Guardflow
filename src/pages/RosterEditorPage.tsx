@@ -38,7 +38,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
 function TopBar({ onBack }: { onBack: () => void }) {
   return (
     <div className="bg-white border-b border-border px-4 pt-5 pb-4 flex items-center justify-between">
-      <h1 className="text-xl font-bold text-text-primary">עורך לוז</h1>
+      <h1 className="text-xl font-bold text-text-primary">עורך לו״ז</h1>
       <button onClick={onBack} className="text-sm font-medium text-primary flex items-center gap-1 active:opacity-70">
         חזור לרשימה ←
       </button>
@@ -60,6 +60,7 @@ export function RosterEditorPage() {
   const [notes, setNotes] = useState('')
   const [published, setPublished] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(true)
   const [actionError, setActionError] = useState<string | null>(null)
   const cellInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -232,34 +233,33 @@ export function RosterEditorPage() {
 
       <div className="px-4 pt-4">
         {/* ── Hero card ── */}
-        <div className="rounded-card bg-slate-900 text-white p-4">
+        <div className="rounded-card bg-primary text-white p-4">
           <div className="flex items-start justify-between gap-3">
             <span
               className={`text-[11px] font-bold rounded-badge px-2 py-0.5 shrink-0 ${
-                published ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'
+                published ? 'bg-good-light text-good' : 'bg-warning-light text-warning'
               }`}
             >
-              {published ? '✅ פורסם' : 'טיוטה'}
+              {published ? 'פורסם' : 'טיוטה'}
             </span>
             <div className="flex-1 text-right min-w-0">
               <div className="flex items-center gap-2 justify-end">
                 <p className="text-base font-bold truncate">{title}</p>
-                {shift && <span className="text-xl shrink-0">{shift.emoji}</span>}
               </div>
-              {subtitle && <p className="text-sm text-slate-300 mt-1">{subtitle}</p>}
+              {subtitle && <p className="text-sm text-white/70 mt-1">{subtitle}</p>}
             </div>
           </div>
 
           <div className="mt-3 inline-flex items-center gap-1.5 bg-white/10 rounded-badge px-3 py-1.5 text-xs font-semibold">
-            <span className="text-slate-300 font-normal">סוג משמרת:</span> {typeLabel}
+            <span className="text-white/70 font-normal">סוג משמרת:</span> {typeLabel}
           </div>
         </div>
 
         {/* ── Status sentence ── */}
         <p className="text-xs text-text-secondary leading-relaxed mt-3">
           {published
-            ? '✅ הלוח פורסם ומוצג למאבטחים. תוכל לערוך ולפרסם מחדש בכל עת.'
-            : '📝 הלוח בטיוטה — עדיין לא מוצג למאבטחים.'}
+            ? 'הלוח פורסם ומוצג למאבטחים. תוכל לערוך ולפרסם מחדש בכל עת.'
+            : 'הלוח בטיוטה — עדיין לא מוצג למאבטחים.'}
         </p>
 
         {actionError && (
@@ -269,7 +269,7 @@ export function RosterEditorPage() {
         {/* ── Primary CTA / save-publish bar ── */}
         {!isEditing ? (
           <button onClick={() => setIsEditing(true)} className="btn-primary w-full h-14 mt-3 rounded-[14px] text-[15px]">
-            ערוך שיבוצים ✏️
+            ערוך שיבוצים
           </button>
         ) : (
           <div className="flex flex-col gap-2 mt-3">
@@ -318,7 +318,18 @@ export function RosterEditorPage() {
         </div>
       ) : notes ? (
         <div className="px-4 mt-4">
-          <div className="card p-3.5 text-sm text-text-secondary">{notes}</div>
+          <div className="card px-3.5 py-1">
+            <button
+              onClick={() => setNotesOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between gap-3 py-3 text-right"
+            >
+              <span className="text-sm font-bold text-text-primary">הערות למשמרת</span>
+              <span className="w-[26px] h-[26px] rounded-full bg-primary text-white flex items-center justify-center text-sm shrink-0">
+                {notesOpen ? '−' : '+'}
+              </span>
+            </button>
+            {notesOpen && <p className="text-sm text-text-secondary pb-3.5 leading-relaxed">{notes}</p>}
+          </div>
         </div>
       ) : null}
 
@@ -328,15 +339,15 @@ export function RosterEditorPage() {
           <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: '60vh' }} dir="rtl">
             <table className="border-collapse text-xs" style={{ minWidth: '100%' }}>
               <thead>
-                <tr className="bg-slate-900 text-white sticky top-0 z-[3]">
-                  <th className="w-9 px-1.5 py-2 border-l border-slate-700 text-[10px] text-slate-400 font-normal sticky right-0 bg-slate-900 z-[4]">
+                <tr className="bg-primary text-white sticky top-0 z-[3]">
+                  <th className="w-9 px-1.5 py-2 border-l border-white/10 text-[10px] text-white/50 font-normal sticky right-0 bg-primary z-[4]">
                     #
                   </th>
-                  <th className="min-w-[64px] px-2.5 py-2 border-l border-slate-700 font-bold text-[11px] text-blue-300 sticky right-9 bg-slate-900 z-[4]">
+                  <th className="min-w-[64px] px-2.5 py-2 border-l border-white/10 font-bold text-[11px] text-white/90 sticky right-9 bg-primary z-[4]">
                     שעה
                   </th>
                   {cols.map((col) => (
-                    <th key={col} className="min-w-[140px] p-0 border-l border-slate-700">
+                    <th key={col} className="min-w-[140px] p-0 border-l border-white/10">
                       {isEditing ? (
                         <div className="flex items-center">
                           <input
@@ -349,7 +360,7 @@ export function RosterEditorPage() {
                           />
                           <button
                             onClick={() => handleRemoveColumn(col)}
-                            className="text-slate-400 active:text-red-400 px-1.5 shrink-0"
+                            className="text-white/50 active:text-danger px-1.5 shrink-0"
                             aria-label={`מחק תפקיד ${col}`}
                           >
                             ✕
@@ -364,7 +375,7 @@ export function RosterEditorPage() {
                     <th className="w-10 p-1.5">
                       <button
                         onClick={handleAddColumn}
-                        className="border border-dashed border-slate-500 text-slate-300 rounded px-2 py-0.5 text-sm leading-none"
+                        className="border border-dashed border-white/20 text-white/70 rounded px-2 py-0.5 text-sm leading-none"
                         aria-label="הוסף תפקיד"
                       >
                         +
@@ -383,7 +394,7 @@ export function RosterEditorPage() {
                         {ri + 1}
                       </td>
                       <td className="border-l-2 border-primary/30 border-b border-border sticky right-9 z-[2] bg-primary-light">
-                        <div className="text-center font-mono font-extrabold text-primary py-1.5">{row.time}</div>
+                        <div className="text-center font-extrabold text-primary py-1.5 tabular-nums">{row.time}</div>
                       </td>
                       {cols.map((col, ci) => (
                         <td key={col} className="border-l border-b border-border p-0">
@@ -407,7 +418,7 @@ export function RosterEditorPage() {
                         <td className="text-center p-1 border-b border-border">
                           <button
                             onClick={() => handleRemoveTimeRow(row.time)}
-                            className="text-text-muted active:text-red-500 px-1"
+                            className="text-text-muted active:text-danger px-1"
                             aria-label={`מחק שורת ${row.time}`}
                           >
                             🗑

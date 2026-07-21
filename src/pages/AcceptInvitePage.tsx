@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import logoIcon from '../assets/logo_icon.png'
 
 export function AcceptInvitePage() {
   const { session, loading } = useAuth()
@@ -67,8 +68,8 @@ export function AcceptInvitePage() {
   return (
     <section dir="rtl" className="mx-auto flex min-h-[70vh] w-full max-w-mobile items-center px-4 py-8">
       <form onSubmit={handleSubmit} className="w-full card p-5 flex flex-col gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-text-primary mb-1">ברוך הבא ל-GuardFlow</h2>
+        <div className="flex flex-col items-center text-center">
+          <img src={logoIcon} alt="" className="mb-3 h-9 w-auto" />
           <p className="text-sm text-text-secondary">קבע סיסמה כדי להשלים את ההרשמה.</p>
         </div>
 

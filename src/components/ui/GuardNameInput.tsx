@@ -72,7 +72,7 @@ export default function GuardNameInput({ value, profiles, onChange, readOnly }: 
                 onClick={() => selectProfile(profile)}
                 className="flex items-center gap-2.5 w-full px-3 py-2 border-b border-background last:border-b-0 text-right active:bg-background"
               >
-                <span className="w-7 h-7 rounded-full bg-primary-light flex items-center justify-center text-[11px] font-extrabold text-primary shrink-0">
+                <span className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-[11px] font-extrabold text-white shrink-0">
                   {name[0]}
                 </span>
                 <span className="text-[13px] font-semibold text-text-primary truncate">{name}</span>

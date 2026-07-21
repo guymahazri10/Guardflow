@@ -15,7 +15,21 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <BrowserRouter>
           <AppRouter />
-          <Toaster position="top-center" />
+          <Toaster
+            position="top-center"
+            toastOptions={{
+              style: {
+                fontFamily: 'Heebo, sans-serif',
+                fontSize: '13px',
+                fontWeight: 600,
+                borderRadius: '16px',
+                border: '1px solid #D9DEE5',
+                color: '#15171A',
+              },
+              success: { iconTheme: { primary: '#2F7D4A', secondary: '#ffffff' } },
+              error: { iconTheme: { primary: '#B63A32', secondary: '#ffffff' } },
+            }}
+          />
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>

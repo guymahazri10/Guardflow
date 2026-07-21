@@ -17,20 +17,22 @@ export const COLORS = {
 } as const;
 
 // Position → badge color mapping (Hebrew position names)
+// Distinct pastel-strong hues — clear enough to tell positions apart at a glance
+// even before anyone's assigned. See design.md "פלטת עמדות".
 export const POSITION_COLORS: Record<string, string> = {
-  לובי: '#e67e22',
-  סריקה: '#27ae60',
-  פרימטר: '#27ae60',
-  כונן: '#8e44ad',
-  הפסקה: '#7f8c8d',
-  הפסקת: '#7f8c8d',
-  'שובר שגרה': '#f39c12',
-  חילוף: '#0f766e',
-  סגירה: '#0891b2',
-  'עמדה חיצונית': '#b45309',
-  כיכר: '#b45309',
-  ניהול: '#116dff',
-  ביקורות: '#116dff',
+  לובי: '#c99a4f',
+  סריקה: '#5f9e72',
+  פרימטר: '#5f9e72',
+  כונן: '#9868b8',
+  הפסקה: '#a89c8a',
+  הפסקת: '#a89c8a',
+  'שובר שגרה': '#d6823f',
+  חילוף: '#3f9aa8',
+  סגירה: '#4f7fc4',
+  'עמדה חיצונית': '#c1613f',
+  כיכר: '#c1613f',
+  ניהול: '#1B56A5',
+  ביקורות: '#1B56A5',
 };
 
 /** Real position text is long and descriptive (e.g. "סריקת לובי תחתון + CD
@@ -54,12 +56,22 @@ export type PositionBadgeStyle = {
   borderColor: string;
 };
 
-/** Light tinted pill style (text/bg/border) derived from the same base color as getPositionColor. */
-export function getPositionBadgeStyle(position: string): PositionBadgeStyle {
+/**
+ * Tinted pill style (text/bg/border) derived from the same base color as getPositionColor.
+ * `assigned` encodes whether a guard is actually filled in, not just the position: a filled
+ * tint means "someone's here", a plain outline means "open slot" — the shape/fill carries the
+ * state, not color alone (see design.md "תג הקצאה").
+ */
+export function getPositionBadgeStyle(position: string, assigned = true): PositionBadgeStyle {
   const base = getPositionColor(position);
+  if (!assigned) {
+    // Still tinted by position — an empty slot for "כונן" should read differently
+    // from an empty "לובי" slot. Fill vs. outline carries the assigned/open state.
+    return { color: base, backgroundColor: 'transparent', borderColor: hexToRgba(base, 0.5) };
+  }
   return {
     color: base,
-    backgroundColor: hexToRgba(base, 0.12),
-    borderColor: hexToRgba(base, 0.35),
+    backgroundColor: hexToRgba(base, 0.22),
+    borderColor: 'transparent',
   };
 }
