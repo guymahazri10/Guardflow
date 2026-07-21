@@ -69,10 +69,10 @@
 
 | עמדה | טוקן | ערך |
 |---|---|---|
-| לובי | `position.lobby` | `#c99a4f` |
+| לובי | `position.lobby` | `#D2A85C` (הכי בהיר בפלטה, בכוונה) |
 | סריקה / פרימטר | `position.perimeter` | `#5f9e72` |
 | כונן | `position.standby` | `#9868b8` |
-| הפסקה | `position.break` | `#a89c8a` |
+| הפסקה | `position.break` | `#7C838C` (אפור נטול-גוון בכוונה — "הפסקה" היא לא-עמדה, לא צריכה זהות צבעונית משלה) |
 | שובר שגרה | `position.routine` | `#d6823f` |
 | חילוף | `position.relief` | `#3f9aa8` |
 | סגירה | `position.close` | `#4f7fc4` |
@@ -173,8 +173,8 @@ colors: {
   danger: '#B63A32', 'danger-light': '#FBE8E6',
   info: '#17627A', 'info-light': '#DDF3F7',
   position: {
-    lobby: '#c99a4f', perimeter: '#5f9e72', standby: '#9868b8',
-    break: '#a89c8a', routine: '#d6823f', relief: '#3f9aa8',
+    lobby: '#D2A85C', perimeter: '#5f9e72', standby: '#9868b8',
+    break: '#7C838C', routine: '#d6823f', relief: '#3f9aa8',
     close: '#4f7fc4', exterior: '#c1613f', management: '#1B56A5',
   },
 },

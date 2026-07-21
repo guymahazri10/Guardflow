@@ -20,12 +20,12 @@ export const COLORS = {
 // Distinct pastel-strong hues — clear enough to tell positions apart at a glance
 // even before anyone's assigned. See design.md "פלטת עמדות".
 export const POSITION_COLORS: Record<string, string> = {
-  לובי: '#c99a4f',
+  לובי: '#D2A85C',
   סריקה: '#5f9e72',
   פרימטר: '#5f9e72',
   כונן: '#9868b8',
-  הפסקה: '#a89c8a',
-  הפסקת: '#a89c8a',
+  הפסקה: '#7C838C',
+  הפסקת: '#7C838C',
   'שובר שגרה': '#d6823f',
   חילוף: '#3f9aa8',
   סגירה: '#4f7fc4',
