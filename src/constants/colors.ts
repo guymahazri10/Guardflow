@@ -35,11 +35,26 @@ export const POSITION_COLORS: Record<string, string> = {
   ביקורות: '#1B56A5',
 };
 
-/** Real position text is long and descriptive (e.g. "סריקת לובי תחתון + CD
- *  פרימטר"), not a bare keyword — so match by substring, not exact key. */
+/**
+ * Real position text is long and descriptive (e.g. "כונן - לובי תחתון"), not a
+ * bare keyword — so match by substring. When more than one keyword appears
+ * (as above), pick whichever one appears earliest in the text rather than
+ * whichever key happens to come first in POSITION_COLORS — otherwise a
+ * "כונן" duty that mentions "לובי" in passing would wrongly render as לובי.
+ */
 export function getPositionColor(position: string): string {
-  const match = Object.entries(POSITION_COLORS).find(([keyword]) => position.includes(keyword));
-  return match ? match[1] : '#6b7280';
+  let bestIndex = Infinity;
+  let bestColor: string | null = null;
+
+  for (const [keyword, color] of Object.entries(POSITION_COLORS)) {
+    const index = position.indexOf(keyword);
+    if (index !== -1 && index < bestIndex) {
+      bestIndex = index;
+      bestColor = color;
+    }
+  }
+
+  return bestColor ?? '#6b7280';
 }
 
 function hexToRgba(hex: string, alpha: number): string {
