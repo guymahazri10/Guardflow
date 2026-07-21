@@ -31,11 +31,9 @@ export function PositionChangeNotifier() {
   const { board, category } = useActiveBoard()
   const notifiedForRef = useRef<string | null>(null)
 
-  useEffect(() => {
-    if (!isGuard) return
-    if (typeof Notification === 'undefined' || Notification.permission !== 'default') return
-    void Notification.requestPermission()
-  }, [isGuard])
+  // Permission is requested from a direct user click on <NotificationBell />,
+  // not silently here — browsers increasingly ignore or auto-mute a
+  // permission prompt that isn't tied to a real user gesture.
 
   useEffect(() => {
     if (!isGuard || !user || !board) return

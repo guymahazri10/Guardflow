@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useClock, formatHHMM } from '../hooks/useClock'
 import { useActiveBoard } from '../hooks/useActiveBoard'
 import GuardCard from '../components/ui/GuardCard'
+import { NotificationBell } from '../components/ui/NotificationBell'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftById, getShiftHoursLabel } from '../constants/shifts'
 import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
@@ -29,7 +30,10 @@ export function ShiftLivePage() {
   return (
     <div className="flex flex-col flex-1 gap-0 max-w-mobile mx-auto w-full">
       {/* ── Clock hero ── */}
-      <div className="bg-white border-b border-border px-4 py-6 flex flex-col items-center">
+      <div className="relative bg-white border-b border-border px-4 py-6 flex flex-col items-center">
+        <div className="absolute top-3 left-3">
+          <NotificationBell />
+        </div>
         <span className="text-[11px] font-bold text-text-secondary mb-1">• פעיל עכשיו</span>
         <p className="text-[52px] font-black leading-none tracking-tight text-text-primary tabular-nums">
           {formatHHMM(now)}
