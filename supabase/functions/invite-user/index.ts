@@ -86,7 +86,20 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Invalid email or role' }, 400)
   }
 
-  const { adminClient } = auth
+  const { adminClient, caller } = auth
+
+  // Allow-list this email *before* creating the auth user: a BEFORE INSERT
+  // trigger on auth.users checks pending_invites and rejects anyone who
+  // isn't in it — including this very call, so the order matters. This also
+  // lets an invited user sign in with Google instead of setting a password;
+  // an AFTER INSERT trigger picks the role back up from here in that case.
+  const { error: pendingError } = await adminClient
+    .from('pending_invites')
+    .upsert({ email, app_role: role, full_name: fullName || null, invited_by: caller.id }, { onConflict: 'email' })
+
+  if (pendingError) {
+    return jsonResponse({ error: pendingError.message }, 500)
+  }
 
   const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
     data: fullName ? { full_name: fullName } : undefined,
@@ -94,6 +107,7 @@ Deno.serve(async (req) => {
   })
 
   if (inviteError || !invited?.user) {
+    await adminClient.from('pending_invites').delete().eq('email', email)
     return jsonResponse({ error: inviteError?.message ?? 'Failed to invite user' }, 400)
   }
 
@@ -105,6 +119,11 @@ Deno.serve(async (req) => {
   if (updateError) {
     return jsonResponse({ error: updateError.message }, 500)
   }
+
+  // The AFTER INSERT trigger already consumed/deleted the pending_invites
+  // row for this normal (admin-creates-then-user-sets-password) path — this
+  // is just a safety net in case that ever changes.
+  await adminClient.from('pending_invites').delete().eq('email', email)
 
   return jsonResponse({ id: invited.user.id, email: invited.user.email }, 200)
 })

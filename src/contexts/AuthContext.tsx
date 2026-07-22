@@ -48,6 +48,7 @@ type AuthContextValue = {
   profileStatus: ProfileStatus
   profileError: string | null
   signIn: (email: string, password: string) => Promise<void>
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -191,6 +192,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  /** Only succeeds for an email a manager already invited — enforced server-side by a DB trigger. */
+  const signInWithGoogle = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/shift-live` },
+    })
+
+    if (error) {
+      throw error
+    }
+  }, [])
+
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut()
 
@@ -215,9 +228,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileStatus,
       profileError,
       signIn,
+      signInWithGoogle,
       signOut,
     }
-  }, [loading, profile, profileError, profileStatus, session, signIn, signOut])
+  }, [loading, profile, profileError, profileStatus, session, signIn, signInWithGoogle, signOut])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
