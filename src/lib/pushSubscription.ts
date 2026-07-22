@@ -12,6 +12,23 @@ export function pushSupported(): boolean {
   return 'serviceWorker' in navigator && 'PushManager' in window
 }
 
+export function isIos(): boolean {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent)
+}
+
+/** iOS only supports Web Push from an installed (Home Screen) PWA — never a regular Safari tab. */
+export function isStandalone(): boolean {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  )
+}
+
+/** True when push genuinely cannot work here yet: iOS in a normal browser tab. */
+export function needsHomeScreenInstall(): boolean {
+  return isIos() && !isStandalone()
+}
+
 async function getRegistration(): Promise<ServiceWorkerRegistration | null> {
   if (!pushSupported()) return null
   return navigator.serviceWorker.register('/sw.js')

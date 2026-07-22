@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../../contexts/AuthContext'
-import { hasActivePushSubscription, subscribeToPush } from '../../lib/pushSubscription'
+import { hasActivePushSubscription, needsHomeScreenInstall, subscribeToPush } from '../../lib/pushSubscription'
 
 type PermissionState = 'default' | 'granted' | 'denied' | 'unsupported'
 
@@ -33,6 +33,14 @@ export function NotificationBell() {
 
   async function handleClick() {
     if (busy) return
+
+    if (needsHomeScreenInstall()) {
+      toast(
+        'באייפון התראות עובדות רק אחרי שמוסיפים את GuardFlow למסך הבית: כפתור השיתוף ⬆️ ← "הוסף למסך הבית", ואז לפתוח מהאייקון שם.',
+        { duration: 8000 },
+      )
+      return
+    }
 
     if (permission === 'unsupported') {
       toast('הדפדפן הזה לא תומך בהתראות', { duration: 4000 })
