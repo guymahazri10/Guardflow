@@ -65,11 +65,17 @@
     @apply text-text-secondary font-medium;
   }
 
-  /* Safe-area padding for iOS bottom bar */
+  /* Safe-area clearance for the iOS home indicator / notch.
+     Uses margin, not padding: several call sites already set their own
+     padding-bottom/top via a Tailwind utility (pb-3, p-4, ...) on the same
+     element, and a same-property padding-bottom rule here would just lose
+     that cascade fight (Tailwind's utilities layer always loads after our
+     components layer) — margin is a different property, so it always adds
+     on top instead of silently getting overridden. */
   .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    margin-bottom: env(safe-area-inset-bottom, 0px);
   }
   .safe-top {
-    padding-top: env(safe-area-inset-top, 0px);
+    margin-top: env(safe-area-inset-top, 0px);
   }
 }
