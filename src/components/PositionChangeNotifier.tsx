@@ -8,26 +8,18 @@ import type { RosterBoard } from '../lib/rosterBoards'
 const NOTIFY_WINDOW_MINUTES = 5
 const CHECK_INTERVAL_MS = 30 * 1000
 
-/** Prefer the user_id link; fall back to matching the guard's own display
- *  name for roles someone typed in without linking an account. */
-function findMyRole(board: RosterBoard, userId: string, fullName: string | null): string | null {
+/** Only a linked user_id counts — a role typed in as free text without picking
+ *  a registered account shouldn't notify anyone, matching the server-side push logic. */
+function findMyRole(board: RosterBoard, userId: string): string | null {
   const entries = Object.entries(board.guard_names)
-
   const byUserId = entries.find(([, assignment]) => assignment.user_id === userId)
-  if (byUserId) return byUserId[0]
-
-  if (fullName) {
-    const byName = entries.find(([, assignment]) => assignment.name === fullName)
-    if (byName) return byName[0]
-  }
-
-  return null
+  return byUserId ? byUserId[0] : null
 }
 
 /** Background watcher: notifies the logged-in guard ~5 minutes before their assigned
  *  task changes to a different position within the currently active board. */
 export function PositionChangeNotifier() {
-  const { isGuard, user, profile } = useAuth()
+  const { isGuard, user } = useAuth()
   const { board, category } = useActiveBoard()
   const notifiedForRef = useRef<string | null>(null)
 
@@ -48,7 +40,7 @@ export function PositionChangeNotifier() {
       const nextBlock = getNextBlock(rows, currentBlock, isNight)
       if (!currentBlock || !nextBlock) return
 
-      const myRole = findMyRole(board, user.id, profile?.full_name ?? null)
+      const myRole = findMyRole(board, user.id)
       if (!myRole) return
 
       const currentTask = currentBlock.cells?.[myRole]
@@ -75,7 +67,7 @@ export function PositionChangeNotifier() {
     check()
     const interval = setInterval(check, CHECK_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [isGuard, user, profile, board, category])
+  }, [isGuard, user, board, category])
 
   return null
 }
