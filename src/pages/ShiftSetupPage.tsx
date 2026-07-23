@@ -271,7 +271,9 @@ function GuardNameRow({
   readOnly: boolean
 }) {
   return (
-    <div className="bg-white rounded-xl border border-border flex items-center overflow-hidden h-[52px] focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-shadow">
+    <div className="bg-white rounded-xl border border-border flex items-center h-[52px] focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-shadow">
+      {/* No overflow-hidden here: GuardNameInput's suggestion dropdown is
+          absolutely positioned below this row and would get clipped by it. */}
       {/* Role label — appears on right in RTL */}
       <div className="flex items-center justify-end px-4 shrink-0 min-w-[88px] border-l border-border h-full">
         <span className="text-sm font-medium text-text-secondary">{role}</span>
