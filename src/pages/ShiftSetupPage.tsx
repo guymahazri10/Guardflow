@@ -52,8 +52,16 @@ export function ShiftSetupPage() {
   const [pullY, setPullY] = useState(0)
   const PULL_THRESHOLD = 72
 
+  // Re-initializes only when the selected board actually changes (a different
+  // id), not on every background refetch of the same board (React Query
+  // refetches on window focus/mount by default) — otherwise a refetch mid-edit
+  // would silently overwrite whatever the manager just typed.
+  const initializedBoardIdRef = useRef<string | null>(null)
+
   useEffect(() => {
-    setGuardNames(board?.guard_names ?? {})
+    if (!board || initializedBoardIdRef.current === board.id) return
+    initializedBoardIdRef.current = board.id
+    setGuardNames(board.guard_names)
   }, [board])
 
   function handleCategoryChange(cat: ShiftCategory) {
