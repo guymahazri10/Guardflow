@@ -107,8 +107,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const mountedRef = useRef(false)
   const authRequestRef = useRef(0)
+  const currentUserIdRef = useRef<string | null>(null)
 
   const resolveAuthState = useCallback(async (nextSession: Session | null) => {
+    const nextUser = nextSession?.user ?? null
+
+    // Supabase re-emits auth events (e.g. TOKEN_REFRESHED) whenever the tab
+    // regains visibility, even with no real change. Treating every emission
+    // as a fresh sign-in flipped `loading` on and off for the same user,
+    // which remounts every protected page (via ProtectedRoute/EditorRoute)
+    // and silently wipes whatever the user was mid-typing. Only the user
+    // actually changing (sign-in, sign-out, switch) should trigger that.
+    if (nextUser?.id === currentUserIdRef.current) {
+      if (mountedRef.current) {
+        setSession(nextSession)
+      }
+      return
+    }
+    currentUserIdRef.current = nextUser?.id ?? null
+
     const requestId = authRequestRef.current + 1
     authRequestRef.current = requestId
 
@@ -116,10 +133,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true)
       setSession(nextSession)
       setProfileError(null)
-      setProfileStatus(nextSession?.user ? 'loading' : 'idle')
+      setProfileStatus(nextUser ? 'loading' : 'idle')
     }
-
-    const nextUser = nextSession?.user ?? null
 
     if (!nextUser) {
       if (mountedRef.current && authRequestRef.current === requestId) {
