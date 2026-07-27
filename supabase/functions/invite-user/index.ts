@@ -77,7 +77,10 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Invalid JSON body' }, 400)
   }
 
-  const email = typeof body.email === 'string' ? body.email.trim() : ''
+  // Lowercased: Supabase always stores auth.users.email lowercase, and the
+  // allow-list trigger compares against pending_invites.email exactly — a
+  // mixed-case address here would insert fine but never match at signup.
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
   const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : ''
   const role = typeof body.role === 'string' ? body.role : ''
   const redirectTo = typeof body.redirectTo === 'string' ? body.redirectTo : undefined
