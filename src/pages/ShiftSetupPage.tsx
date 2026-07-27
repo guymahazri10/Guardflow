@@ -105,7 +105,7 @@ export function ShiftSetupPage() {
 
   return (
     <div
-      className="flex flex-col flex-1 max-w-mobile mx-auto w-full"
+      className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-none"
       onTouchStart={(e) => {
         touchStartY.current = e.touches[0].clientY
       }}
