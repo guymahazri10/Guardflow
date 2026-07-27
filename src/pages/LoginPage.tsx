@@ -51,7 +51,7 @@ export function LoginPage() {
   }
 
   return (
-    <section dir="rtl" className="mx-auto flex min-h-[80vh] w-full max-w-mobile items-center px-6 py-8">
+    <section dir="rtl" className="mx-auto flex min-h-[80vh] w-full max-w-mobile items-center px-6 py-8 lg:max-w-md lg:py-16">
       <div className="w-full">
         <div className="mb-8 flex flex-col items-center text-center">
           <img src={logoFull} alt="GuardFlow" className="h-auto w-[150px]" />

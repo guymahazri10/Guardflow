@@ -47,7 +47,7 @@ export function AcceptInvitePage() {
 
   if (loading) {
     return (
-      <section dir="rtl" className="mx-auto flex min-h-[70vh] w-full max-w-mobile items-center justify-center px-4 text-text-secondary">
+      <section dir="rtl" className="mx-auto flex min-h-[70vh] w-full max-w-mobile items-center justify-center px-4 text-text-secondary lg:max-w-md">
         טוען...
       </section>
     )
@@ -55,7 +55,7 @@ export function AcceptInvitePage() {
 
   if (!session) {
     return (
-      <section dir="rtl" className="mx-auto flex min-h-[70vh] w-full max-w-mobile flex-col items-center justify-center px-4 text-center gap-3">
+      <section dir="rtl" className="mx-auto flex min-h-[70vh] w-full max-w-mobile flex-col items-center justify-center px-4 text-center gap-3 lg:max-w-md">
         <h2 className="text-xl font-bold text-text-primary">הקישור אינו תקף</h2>
         <p className="text-sm text-text-secondary">ייתכן שהקישור פג תוקף או שכבר נעשה בו שימוש. בקש מהמנהל הזמנה חדשה.</p>
         <a href="/login" className="btn-primary mt-2 inline-block">
@@ -66,7 +66,7 @@ export function AcceptInvitePage() {
   }
 
   return (
-    <section dir="rtl" className="mx-auto flex min-h-[70vh] w-full max-w-mobile items-center px-4 py-8">
+    <section dir="rtl" className="mx-auto flex min-h-[70vh] w-full max-w-mobile items-center px-4 py-8 lg:max-w-md lg:py-16">
       <form onSubmit={handleSubmit} className="w-full card p-5 flex flex-col gap-4">
         <div className="flex flex-col items-center text-center">
           <img src={logoIcon} alt="" className="mb-3 h-9 w-auto" />
