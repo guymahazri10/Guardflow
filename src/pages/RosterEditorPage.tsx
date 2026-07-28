@@ -32,7 +32,7 @@ function nextTimeSlot(rows: RosterBoardRow[]): string {
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">{children}</div>
+  return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-none">{children}</div>
 }
 
 function TopBar({ onBack }: { onBack: () => void }) {
