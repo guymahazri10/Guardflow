@@ -10,7 +10,7 @@ export function AppShell() {
 
       <Sidebar />
 
-      <div className="mx-auto flex flex-1 w-full max-w-mobile flex-col pb-20 lg:max-w-3xl lg:pb-8 lg:px-8 lg:py-8">
+      <div className="mx-auto flex flex-1 w-full max-w-mobile flex-col pb-20 lg:max-w-none lg:pb-8 lg:px-8 lg:py-8">
         <main className="flex flex-1 flex-col">
           <Outlet />
         </main>
