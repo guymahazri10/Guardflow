@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/AppShell'
 import { AdminRoute } from '../components/routes/AdminRoute'
 import { EditorRoute } from '../components/routes/EditorRoute'
@@ -11,6 +11,8 @@ import { ProfilePage } from '../pages/ProfilePage'
 import { RosterEditorPage } from '../pages/RosterEditorPage'
 import { ShiftLivePage } from '../pages/ShiftLivePage'
 import { ShiftSetupPage } from '../pages/ShiftSetupPage'
+import { ShiftTemplateEditorPage } from '../pages/ShiftTemplateEditorPage'
+import { ShiftTemplatesPage } from '../pages/ShiftTemplatesPage'
 import { UserManagementPage } from '../pages/UserManagementPage'
 
 export function AppRouter() {
@@ -29,12 +31,18 @@ export function AppRouter() {
             <Route path="/admin" element={<AdminPanelPage />} />
             <Route path="/roster-editor" element={<RosterEditorPage />} />
             <Route path="/users" element={<UserManagementPage />} />
+            <Route path="/shift-templates" element={<ShiftTemplatesListOrEditor />} />
           </Route>
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )
+}
+
+function ShiftTemplatesListOrEditor() {
+  const [searchParams] = useSearchParams()
+  return searchParams.get('shiftId') ? <ShiftTemplateEditorPage /> : <ShiftTemplatesPage />
 }
 
 function LoginRoute() {
