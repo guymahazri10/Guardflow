@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCreateRosterBoard, useDeleteRosterBoard, useRosterBoards } from '../hooks/useRosterBoards'
-import { findDefaultRosterTemplateByShiftId } from '../lib/defaultRosterTemplates'
-import { SHIFT_CATEGORIES, SHIFTS, getShiftHoursLabel, type ShiftConfig } from '../constants/shifts'
+import { useShiftTemplates } from '../hooks/useShiftTemplates'
+import { SHIFTS, getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel, type ShiftConfig } from '../constants/shifts'
 import type { RosterBoard } from '../lib/rosterBoards'
 import { ClipboardIcon } from '../components/ui/StateIcon'
 
@@ -12,19 +12,11 @@ type ShiftDisplay = {
   subtitle: string
 }
 
-/** Guard count comes from defaultRosterTemplates.ts (subLabel); hours use the
- *  canonical category boundary (07:00–15:00 / 15:00–23:00 / 23:00–07:00),
- *  not the template's real-world hours which include a 30min handover
- *  buffer (e.g. morning_6 actually ends 15:30) — that buffer is real
- *  schedule data, not something we want surfaced as "the shift's hours". */
 function buildShiftDisplay(shift: ShiftConfig): ShiftDisplay {
-  const template = findDefaultRosterTemplateByShiftId(shift.id)
-  const hours = getShiftHoursLabel(shift)
-
   return {
     shift,
-    title: template?.label ?? `משמרת ${SHIFT_CATEGORIES[shift.category].label}`,
-    subtitle: template ? `${template.subLabel} · ${hours}` : `${shift.label} · ${hours}`,
+    title: getShiftFullTitle(shift),
+    subtitle: `${getShiftShortLabel(shift)} · ${getShiftHoursLabel(shift)}`,
   }
 }
 
@@ -39,6 +31,7 @@ export function AdminPanelPage() {
   const rosterBoardsQuery = useRosterBoards()
   const createRosterBoardMutation = useCreateRosterBoard()
   const deleteRosterBoardMutation = useDeleteRosterBoard()
+  const shiftTemplatesQuery = useShiftTemplates()
 
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -86,9 +79,16 @@ export function AdminPanelPage() {
       return
     }
 
-    const template = findDefaultRosterTemplateByShiftId(shiftId)
+    const template = shiftTemplatesQuery.data?.find((t) => t.shift_id === shiftId)
 
     if (!template) {
+      setActionError('לא נמצאה תבנית למשמרת שנבחרה.')
+      return
+    }
+
+    const shift = SHIFTS.find((s) => s.id === shiftId)
+
+    if (!shift) {
       setActionError('לא נמצאה תבנית למשמרת שנבחרה.')
       return
     }
@@ -98,7 +98,7 @@ export function AdminPanelPage() {
     try {
       const board = await createRosterBoardMutation.mutateAsync({
         shift_id: template.shift_id,
-        shift_type: template.shift_type,
+        shift_type: shift.category,
         cols: template.cols,
         rows: template.rows,
         notes: template.notes,
@@ -135,12 +135,20 @@ export function AdminPanelPage() {
       {/* ── Header ── */}
       <div className="bg-white border-b border-border px-4 pt-5 pb-4 flex items-center justify-between">
         <h1 className="text-xl font-bold text-text-primary">ניהול לו״זים</h1>
-        <button
-          onClick={() => setShowPicker(true)}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
-        >
-          <span className="text-base leading-none">+</span> לוז חדש
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/shift-templates')}
+            className="px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
+          >
+            תבניות משמרת
+          </button>
+          <button
+            onClick={() => setShowPicker(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
+          >
+            <span className="text-base leading-none">+</span> לוז חדש
+          </button>
+        </div>
       </div>
 
       {/* ── Helper text ── */}
@@ -151,7 +159,7 @@ export function AdminPanelPage() {
         </p>
       </div>
 
-      {actionError && (
+      {actionError && !showPicker && (
         <div className="mx-4 mt-3 rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
           {actionError}
         </div>
@@ -258,15 +266,22 @@ export function AdminPanelPage() {
               </button>
             </div>
 
+            {actionError && (
+              <div className="mx-5 mt-3 rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
+                {actionError}
+              </div>
+            )}
+
             <div className="py-2 pb-1">
               {SHIFT_DISPLAYS.map(({ shift, title, subtitle }) => {
                 const exists = boardByShiftId.has(shift.id)
                 const creating = creatingShiftId === shift.id
+                const templatesLoading = shiftTemplatesQuery.isLoading
 
                 return (
                   <button
                     key={shift.id}
-                    disabled={creating}
+                    disabled={creating || (!exists && templatesLoading)}
                     onClick={() => {
                       void handlePickFromSheet(shift.id)
                     }}
