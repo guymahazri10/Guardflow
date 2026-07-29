@@ -3,7 +3,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useShiftTemplate, useUpdateShiftTemplate } from '../hooks/useShiftTemplates'
 import type { RosterBoardRow } from '../lib/rosterBoards'
-import { addColumn, addTimeRow, removeColumn, removeTimeRow, renameColumn, updateCell } from '../lib/rosterEditorUtils'
+import {
+  addColumn,
+  addTimeRow,
+  ensureRowsHaveAllColumns,
+  removeColumn,
+  removeTimeRow,
+  renameColumn,
+  updateCell,
+} from '../lib/rosterEditorUtils'
 import { getShiftById, getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel } from '../constants/shifts'
 
 function getReadableError(error: unknown) {
@@ -112,10 +120,16 @@ export function ShiftTemplateEditorPage() {
   async function handleSave() {
     if (!shiftId) return
 
+    if (cols.length === 0 || rows.length === 0) {
+      setActionError('לא ניתן לשמור תבנית ריקה — נדרש לפחות תפקיד אחד ושורה אחת.')
+      return
+    }
+
     setActionError(null)
 
     try {
-      await updateMutation.mutateAsync({ shiftId, input: { cols, rows, notes: template?.notes ?? null } })
+      const normalizedRows = ensureRowsHaveAllColumns(cols, rows)
+      await updateMutation.mutateAsync({ shiftId, input: { cols, rows: normalizedRows, notes: template?.notes ?? null } })
       toast.success('נשמר בהצלחה!')
       navigate('/shift-templates')
     } catch (error) {
