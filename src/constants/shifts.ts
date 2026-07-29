@@ -55,7 +55,7 @@ export const SHIFTS: ShiftConfig[] = [
   },
   {
     id: 'night',
-    label: 'לילה',
+    label: 'לילה 2 מאבטחים',
     category: 'night',
     startHour: 23,
     endHour: 7,
@@ -96,4 +96,14 @@ export function getShiftShortLabel(shift: ShiftConfig): string {
 export function getShiftHoursLabel(shift: ShiftConfig): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(shift.startHour)}:00–${p(shift.endHour)}:00`;
+}
+
+/** Full display title for a shift, e.g. "משמרת בוקר" — except night, which
+ *  keeps its existing "משמרת לילה / סופ"ש" wording (this shift also covers
+ *  weekend day shifts, not just night, hence the suffix). */
+export function getShiftFullTitle(shift: ShiftConfig): string {
+  if (shift.category === 'night') {
+    return 'משמרת לילה / סופ"ש'
+  }
+  return `משמרת ${SHIFT_CATEGORIES[shift.category].label}`
 }
