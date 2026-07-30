@@ -12,7 +12,8 @@ import {
   renameColumn,
   updateCell,
 } from '../lib/rosterEditorUtils'
-import { getShiftById, getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel } from '../constants/shifts'
+import { getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel } from '../constants/shifts'
+import { useShiftTypes } from '../hooks/useShiftTypes'
 
 function getReadableError(error: unknown) {
   return error instanceof Error ? error.message : 'הפעולה נכשלה. נסה שוב.'
@@ -43,7 +44,8 @@ export function ShiftTemplateEditorPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const shiftId = searchParams.get('shiftId')
-  const shift = shiftId ? getShiftById(shiftId) : undefined
+  const shiftTypesQuery = useShiftTypes()
+  const shift = shiftId ? shiftTypesQuery.data?.find((s) => s.id === shiftId) : undefined
 
   const templateQuery = useShiftTemplate(shiftId)
   const updateMutation = useUpdateShiftTemplate()
@@ -137,7 +139,7 @@ export function ShiftTemplateEditorPage() {
     }
   }
 
-  if (!shiftId || !shift) {
+  if (!shiftId) {
     return (
       <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
         <TopBar onBack={() => navigate('/shift-templates')} />
@@ -148,7 +150,7 @@ export function ShiftTemplateEditorPage() {
     )
   }
 
-  if (templateQuery.isLoading) {
+  if (templateQuery.isLoading || shiftTypesQuery.isLoading) {
     return (
       <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
         <TopBar onBack={() => navigate('/shift-templates')} />
@@ -159,13 +161,13 @@ export function ShiftTemplateEditorPage() {
     )
   }
 
-  if (templateQuery.isError || !template) {
+  if (!shift || templateQuery.isError || !template) {
     return (
       <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
         <TopBar onBack={() => navigate('/shift-templates')} />
         <div className="p-4">
           <div className="card p-6 text-center text-sm text-text-secondary">
-            {templateQuery.isError ? 'טעינת התבנית נכשלה.' : 'התבנית לא נמצאה.'}
+            {templateQuery.isError || !shift ? 'טעינת התבנית נכשלה.' : 'התבנית לא נמצאה.'}
           </div>
         </div>
       </div>
