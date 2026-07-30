@@ -1,10 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import { useShiftTemplates } from '../hooks/useShiftTemplates'
-import { SHIFTS, getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel } from '../constants/shifts'
+import { getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel } from '../constants/shifts'
+import { useShiftTypes } from '../hooks/useShiftTypes'
 
 export function ShiftTemplatesPage() {
   const navigate = useNavigate()
   const templatesQuery = useShiftTemplates()
+  const shiftTypesQuery = useShiftTypes()
 
   return (
     <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
@@ -13,17 +15,17 @@ export function ShiftTemplatesPage() {
         <p className="text-text-secondary text-sm mt-0.5">בחר תבנית כדי לערוך את תוכן הלוח שלה</p>
       </div>
 
-      {templatesQuery.isError && (
+      {(templatesQuery.isError || shiftTypesQuery.isError) && (
         <div className="mx-4 mt-3 rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
           טעינת התבניות נכשלה. נסה לרענן את העמוד.
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5 pb-6">
-        {templatesQuery.isLoading ? (
+        {templatesQuery.isLoading || shiftTypesQuery.isLoading ? (
           <ListSkeleton />
         ) : (
-          SHIFTS.map((shift) => {
+          (shiftTypesQuery.data ?? []).map((shift) => {
             const template = templatesQuery.data?.find((t) => t.shift_id === shift.id)
 
             return (
