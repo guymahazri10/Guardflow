@@ -17,12 +17,6 @@ function jsonResponse(body: unknown, status: number): Response {
 
 type ShiftCategory = 'morning' | 'afternoon' | 'night'
 
-const SHIFT_IDS_BY_CATEGORY: Record<ShiftCategory, string[]> = {
-  morning: ['morning_6', 'morning_5'],
-  afternoon: ['afternoon_4', 'afternoon_3'],
-  night: ['night'],
-}
-
 const NOTIFY_WINDOW_MINUTES = 5
 
 function getActiveCategory(hour: number): ShiftCategory {
@@ -98,7 +92,16 @@ Deno.serve(async (req) => {
   const nowMins = hour * 60 + minute
   const category = getActiveCategory(hour)
   const isNight = category === 'night'
-  const shiftIds = SHIFT_IDS_BY_CATEGORY[category]
+
+  const { data: shiftTypes, error: shiftTypesError } = await adminClient
+    .from('shift_types')
+    .select('id')
+    .eq('category', category)
+
+  if (shiftTypesError) return jsonResponse({ error: shiftTypesError.message }, 500)
+
+  const shiftIds = (shiftTypes ?? []).map((s) => s.id)
+  if (shiftIds.length === 0) return jsonResponse({ checked: 0, sent: 0, reason: 'no shift types for category' }, 200)
 
   const { data: board, error: boardError } = await adminClient
     .from('roster_boards')

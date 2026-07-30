@@ -93,7 +93,7 @@ export function ShiftTemplatesPage() {
           onClick={handleOpenCreateForm}
           className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
         >
-          <span className="text-base leading-none">+</span> הוסף וריאנט
+          <span className="text-base leading-none">+</span> הוסף תבנית
         </button>
       </div>
 
@@ -112,6 +112,8 @@ export function ShiftTemplatesPage() {
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5 pb-6">
         {templatesQuery.isLoading || shiftTypesQuery.isLoading ? (
           <ListSkeleton />
+        ) : (shiftTypesQuery.data ?? []).length === 0 ? (
+          <div className="card p-6 text-center text-sm text-text-secondary">אין תבניות משמרת עדיין.</div>
         ) : (
           (shiftTypesQuery.data ?? []).map((shift) => {
             const template = templatesQuery.data?.find((t) => t.shift_id === shift.id)
@@ -158,7 +160,7 @@ export function ShiftTemplatesPage() {
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-mobile mx-auto bg-white rounded-t-[20px] safe-bottom p-5 flex flex-col gap-4"
+            className="w-full max-w-mobile mx-auto bg-white rounded-t-[20px] safe-bottom p-5 flex flex-col gap-4 max-h-[85vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold text-text-primary">הוסף וריאנט משמרת</span>

@@ -22,9 +22,9 @@ export function getActiveCategory(hour?: number): ShiftCategory {
 }
 
 /** Builds a ShiftConfig from a shift_types row (see useShiftTypes()) — fills
- *  in the derived label and the category's fixed hour boundaries. Once every
- *  page reads from useShiftTypes() instead of the static SHIFTS array
- *  (Task 9), this becomes the only way ShiftConfig objects get built. */
+ *  in the derived label and the category's fixed hour boundaries. This is
+ *  the only way ShiftConfig objects get built; the catalog lives in the
+ *  shift_types table, not a static array. */
 export function buildShiftConfig(row: { id: string; category: ShiftCategory; guard_count: number }): ShiftConfig {
   const catConfig = SHIFT_CATEGORIES[row.category];
   return {

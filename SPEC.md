@@ -26,7 +26,7 @@ GuardFlow היא אפליקציית ווב (mobile-first, RTL בעברית) לנ
 | Base44 | מימוש בסטאק הנוכחי | סטטוס |
 |---|---|---|
 | `RosterBoard` (ישות שכללה גם `guard_names` + `guard_user_ids`) | `roster_boards` — טבלה אחת, גם מבנה וגם שמות (`guard_names jsonb`, ערך `{name, user_id}` לכל תפקיד). `shift_staffing` נמחקה (Phase 7). טיפוס: `RosterBoard` ב־[rosterBoards.ts](src/lib/rosterBoards.ts) | ✅ קיים |
-| `ShiftConfig.js` (ברירות מחדל) | `SHIFTS`/קטגוריות ב־[shifts.ts](src/constants/shifts.ts) + 5 התבניות ב־[defaultRosterTemplates.ts](src/lib/defaultRosterTemplates.ts). `shiftTime.ts` הכפול נמחק ב־Phase 0 | ✅ קיים |
+| `ShiftConfig.js` (ברירות מחדל) | קטגוריות קבועות (`SHIFT_CATEGORIES`) ב־[shifts.ts](src/constants/shifts.ts); קטלוג הווריאנטים (במקור מערך `SHIFTS` קבוע) עבר לטבלת `shift_types` + תוכן הלוח לטבלת `shift_templates`, נטענים דרך [useShiftTypes.ts](src/hooks/useShiftTypes.ts) / [useShiftTemplates.ts](src/hooks/useShiftTemplates.ts). `defaultRosterTemplates.ts` ו־`shiftTime.ts` הכפול נמחקו | ✅ קיים |
 | `RosterDb.js` (CRUD) | [rosterBoards.ts](src/lib/rosterBoards.ts) (CRUD + `updateRosterBoardGuardNames`) + [useRosterBoards.ts](src/hooks/useRosterBoards.ts) (react-query) | ✅ קיים |
 | `ShiftSetup.jsx` | [ShiftSetupPage.tsx](src/pages/ShiftSetupPage.tsx) — מחובר ופונקציונלי (Phase 2). הקובץ הישן `ShiftSetup.tsx` נמחק לאחר ההעברה | ✅ קיים |
 | `ShiftLive.jsx` | [ShiftLivePage.tsx](src/pages/ShiftLivePage.tsx) — מחובר ופונקציונלי (Phase 3), Realtime על `roster_boards` דרך [useActiveBoard.ts](src/hooks/useActiveBoard.ts) + [useClock.ts](src/hooks/useClock.ts). הקובץ הישן `ShiftLive.tsx` נמחק | ✅ קיים |
@@ -69,7 +69,7 @@ GuardFlow היא אפליקציית ווב (mobile-first, RTL בעברית) לנ
 ### 3.4 חוק מקור־האמת (כלל האנטי־Base44) — מחייב
 1. **מבנה + שמות** → רק `roster_boards`. שורה אחת של לו"ז מכילה את הכל: `cols`, `rows`, `guard_names`. אין טבלה שנייה לשמות.
 2. **אסור נתיב קריאה/כתיבה כפול:** אין לקרוא או לכתוב שמות מכל מקור מלבד `roster_boards.guard_names`. מקום עריכה = מקום קריאה.
-3. **ברירות מחדל** ([defaultRosterTemplates.ts](src/lib/defaultRosterTemplates.ts)) = זרע (seed) בלבד — מועתק אל `roster_boards` בעת "צור מתבנית". **אסור שיהיה נתיב קריאה בזמן ריצה** (זה בדיוק ה־`shiftConfig.js` שגרם לבאג ב־Base44).
+3. **ברירות מחדל** (טבלת `shift_templates`, נטענת דרך [useShiftTemplates.ts](src/hooks/useShiftTemplates.ts)) = זרע (seed) בלבד — מועתק אל `roster_boards` בעת "צור מתבנית". **אסור שיהיה נתיב קריאה בזמן ריצה** (זה בדיוק ה־`shiftConfig.js` שגרם לבאג ב־Base44).
 
 ---
 
@@ -79,7 +79,7 @@ GuardFlow היא אפליקציית ווב (mobile-first, RTL בעברית) לנ
 
 התנהגות בפועל:
 1. טאבים לפי קטגוריה (בוקר/צהריים/לילה) נבחרים אוטומטית לפי שעון אמת (`getActiveCategory`), ניתנים לשינוי ידני.
-2. בחירת וריאנט מבין 5 התבניות: `morning_6` (6 מאבטחים), `morning_5` (5), `afternoon_4` (4), `afternoon_3` (3), `night` (2). הלוח שנטען הוא הפורסם עבור `shift_id` הנבחר, ואם אין — הטיוטה האחרונה.
+2. בחירת וריאנט מתוך קטלוג `shift_types` (טעון דרך [useShiftTypes.ts](src/hooks/useShiftTypes.ts)) — נכון לכתיבה, 5 ברירות מחדל: `morning_6` (6 מאבטחים), `morning_5` (5), `afternoon_4` (4), `afternoon_3` (3), `night` (2), אך מנהל יכול להוסיף/למחוק וריאנטים בתוך קטגוריה קיימת דרך `/shift-templates`. הלוח שנטען הוא הפורסם עבור `shift_id` הנבחר, ואם אין — הטיוטה האחרונה.
 3. עבור כל תפקיד ב־`board.cols` — שדה שם חופשי (`GuardNameRow`) + `<select>` לקישור אופציונלי למשתמש רשום מתוך `profiles`; בחירה ממלאת גם את השם. זו גרסה פשוטה של `GuardNameInput.jsx` (בלי autocomplete אמיתי, אך פותרת את קישור ה־`user_id`).
 4. הרשאת עריכה: מנהל/אחמ"ש בלבד (`isAdmin || isCommander`); מאבטח = צפייה בלבד + כפתור "עבור לתצוגה חיה".
 5. שמירה → `useUpdateGuardNames` → RPC `update_roster_board_guard_names` → מעבר ל־`/shift-live`.
@@ -91,7 +91,7 @@ GuardFlow היא אפליקציית ווב (mobile-first, RTL בעברית) לנ
 **נקודת חיבור:** [ShiftLivePage.tsx](src/pages/ShiftLivePage.tsx) — מחובר בראוטר ופעיל.
 
 התנהגות בפועל:
-1. **חישוב משמרת פעילה לפי שעון אמת בלבד** (לא ניווט ידני): `getActiveCategory()` ממפה שעה → קטגוריה → `SHIFT_IDS_BY_CATEGORY` → נשלף הלו"ז ה**מפורסם** (`published = true`) דרך [useActiveBoard.ts](src/hooks/useActiveBoard.ts).
+1. **חישוב משמרת פעילה לפי שעון אמת בלבד** (לא ניווט ידני): `getActiveCategory()` ממפה שעה → קטגוריה → שליפת ה־`shift_id`-ים של אותה קטגוריה מ־`shift_types` (דרך `useShiftTypes()`) → נשלף הלו"ז ה**מפורסם** (`published = true`) דרך [useActiveBoard.ts](src/hooks/useActiveBoard.ts).
 2. **בלוק זמן נוכחי:** השורה האחרונה שזמנה ≤ עכשיו (`getCurrentBlock` ב־[shiftBlocks.ts](src/lib/shiftBlocks.ts), עם טיפול בגלישת חצות למשמרת לילה דרך `toShiftMinutes`).
 3. **Realtime:** מנוי `postgres_changes` על `roster_boards` בלבד — מכסה גם מבנה, גם פרסום, וגם שינויי שמות, כי הכל באותה שורה.
 4. **מקור השמות בתצוגה = `roster_boards.guard_names[role].name`.**

@@ -12,17 +12,7 @@ function jsonResponse(body: unknown, status: number): Response {
   })
 }
 
-/* ─── Mirrors src/constants/shifts.ts — which category each shift_id belongs to. ─── */
-
 type ShiftCategory = 'morning' | 'afternoon' | 'night'
-
-const CATEGORY_BY_SHIFT_ID: Record<string, ShiftCategory> = {
-  morning_6: 'morning',
-  morning_5: 'morning',
-  afternoon_4: 'afternoon',
-  afternoon_3: 'afternoon',
-  night: 'night',
-}
 
 function getActiveCategory(hour: number): ShiftCategory {
   if (hour >= 7 && hour < 15) return 'morning'
@@ -64,6 +54,12 @@ Deno.serve(async (req) => {
 
   const activeCategory = getActiveCategory(getIsraelHour())
 
+  const { data: shiftTypes, error: shiftTypesError } = await adminClient.from('shift_types').select('id, category')
+  if (shiftTypesError) return jsonResponse({ error: shiftTypesError.message }, 500)
+
+  const categoryByShiftId: Record<string, ShiftCategory> = {}
+  for (const s of shiftTypes ?? []) categoryByShiftId[s.id] = s.category as ShiftCategory
+
   const { data: boards, error } = await adminClient.from('roster_boards').select('id, shift_id, guard_names')
   if (error) return jsonResponse({ error: error.message }, 500)
 
@@ -71,7 +67,7 @@ Deno.serve(async (req) => {
   let reset = 0
 
   for (const board of boards ?? []) {
-    const category = CATEGORY_BY_SHIFT_ID[board.shift_id]
+    const category = categoryByShiftId[board.shift_id]
     if (!category || category === activeCategory) continue // still the live shift, or unknown shift_id — leave alone
 
     checked++

@@ -276,7 +276,7 @@ export function AdminPanelPage() {
               </div>
             )}
 
-            <div className="py-2 pb-1">
+            <div className="py-2 pb-1 max-h-[70vh] overflow-y-auto">
               {shiftDisplays.map(({ shift, title, subtitle }) => {
                 const exists = boardByShiftId.has(shift.id)
                 const creating = creatingShiftId === shift.id
