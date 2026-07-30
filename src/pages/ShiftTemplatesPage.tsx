@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShiftTemplates } from '../hooks/useShiftTemplates'
 import { getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel, SHIFT_CATEGORIES, type ShiftCategory } from '../constants/shifts'
-import { useShiftTypes, useCreateShiftTypeVariant } from '../hooks/useShiftTypes'
+import { useShiftTypes, useCreateShiftTypeVariant, useDeleteShiftTypeVariant } from '../hooks/useShiftTypes'
 
 function getReadableError(error: unknown) {
   return error instanceof Error ? error.message : 'הפעולה נכשלה. נסה שוב.'
@@ -14,12 +14,14 @@ export function ShiftTemplatesPage() {
   const shiftTypesQuery = useShiftTypes()
 
   const createVariantMutation = useCreateShiftTypeVariant()
+  const deleteVariantMutation = useDeleteShiftTypeVariant()
 
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [createCategory, setCreateCategory] = useState<ShiftCategory>('morning')
   const [createGuardCount, setCreateGuardCount] = useState('')
   const [createCloneFromId, setCreateCloneFromId] = useState<string | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
 
   const allShifts = shiftTypesQuery.data ?? []
   const categoryVariants = allShifts.filter((s) => s.category === createCategory)
@@ -64,6 +66,22 @@ export function ShiftTemplatesPage() {
     }
   }
 
+  async function handleDeleteVariant(shiftId: string, event: React.MouseEvent) {
+    event.stopPropagation()
+
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק את הווריאנט? לא ניתן לשחזר.')) {
+      return
+    }
+
+    setListError(null)
+
+    try {
+      await deleteVariantMutation.mutateAsync(shiftId)
+    } catch (error) {
+      setListError(getReadableError(error))
+    }
+  }
+
   return (
     <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
       <div className="bg-white border-b border-border px-4 pt-5 pb-4 flex items-center justify-between">
@@ -79,6 +97,12 @@ export function ShiftTemplatesPage() {
         </button>
       </div>
 
+      {listError && (
+        <div className="mx-4 mt-3 rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
+          {listError}
+        </div>
+      )}
+
       {(templatesQuery.isError || shiftTypesQuery.isError) && (
         <div className="mx-4 mt-3 rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
           טעינת התבניות נכשלה. נסה לרענן את העמוד.
@@ -91,6 +115,7 @@ export function ShiftTemplatesPage() {
         ) : (
           (shiftTypesQuery.data ?? []).map((shift) => {
             const template = templatesQuery.data?.find((t) => t.shift_id === shift.id)
+            const isDeleting = deleteVariantMutation.isPending && deleteVariantMutation.variables === shift.id
 
             return (
               <button
@@ -104,9 +129,22 @@ export function ShiftTemplatesPage() {
                     {getShiftShortLabel(shift)} · {getShiftHoursLabel(shift)}
                   </p>
                 </div>
-                <span className="text-[11px] text-text-muted shrink-0">
-                  {template ? `${template.cols.length} תפקידים` : '—'}
-                </span>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <span className="text-[11px] text-text-muted">
+                    {template ? `${template.cols.length} תפקידים` : '—'}
+                  </span>
+                  <span
+                    role="button"
+                    onClick={(event) => {
+                      void handleDeleteVariant(shift.id, event)
+                    }}
+                    className={`text-[11px] font-medium text-danger active:opacity-70 ${
+                      isDeleting ? 'pointer-events-none opacity-40' : ''
+                    }`}
+                  >
+                    מחק
+                  </span>
+                </div>
               </button>
             )
           })
