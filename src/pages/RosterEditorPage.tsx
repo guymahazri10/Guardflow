@@ -12,7 +12,8 @@ import {
   renameColumn,
   updateCell,
 } from '../lib/rosterEditorUtils'
-import { SHIFT_CATEGORIES, getShiftById, getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel } from '../constants/shifts'
+import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel } from '../constants/shifts'
+import { useShiftTypes } from '../hooks/useShiftTypes'
 
 const publishHelperText = 'כדי לפרסם צריך להוסיף לפחות תפקיד אחד ובלוק זמן אחד.'
 
@@ -68,7 +69,8 @@ export function RosterEditorPage() {
   const canPublish = canPublishRosterBoard({ cols, rows: normalizedRows })
   const isSaving = updateRosterBoardMutation.isPending || publishRosterBoardMutation.isPending
 
-  const shift = board ? getShiftById(board.shift_id) : undefined
+  const shiftTypesQuery = useShiftTypes()
+  const shift = board ? shiftTypesQuery.data?.find((s) => s.id === board.shift_id) : undefined
   const title = shift ? getShiftFullTitle(shift) : 'לו״ז'
   // Canonical category hours, not the board's real-world hours (which include a 30min handover buffer).
   const hours = shift ? getShiftHoursLabel(shift) : ''
