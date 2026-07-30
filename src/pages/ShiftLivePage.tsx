@@ -4,7 +4,8 @@ import { useActiveBoard } from '../hooks/useActiveBoard'
 import GuardCard from '../components/ui/GuardCard'
 import { NotificationBell } from '../components/ui/NotificationBell'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
-import { SHIFT_CATEGORIES, getShiftById, getShiftFullTitle, getShiftHoursLabel } from '../constants/shifts'
+import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel } from '../constants/shifts'
+import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
 
@@ -16,7 +17,8 @@ export function ShiftLivePage() {
   const [tab, setTab] = useState<Tab>('now')
 
   const catConfig = SHIFT_CATEGORIES[category]
-  const shift = board ? getShiftById(board.shift_id) : undefined
+  const shiftTypesQuery = useShiftTypes()
+  const shift = board ? shiftTypesQuery.data?.find((s) => s.id === board.shift_id) : undefined
   const shiftLabel = shift ? getShiftFullTitle(shift) : `משמרת ${catConfig.label}`
   // Canonical category hours (07:00–15:00 / 15:00–23:00 / 23:00–07:00), not the
   // board's real-world hours which include a 30min handover buffer.

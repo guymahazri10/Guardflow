@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { getActiveCategory, SHIFT_IDS_BY_CATEGORY, type ShiftCategory } from '../constants/shifts';
+import { getActiveCategory, type ShiftCategory } from '../constants/shifts';
+import { useShiftTypes } from './useShiftTypes';
 import type { RosterBoard } from '../lib/rosterBoards';
 
 interface ActiveBoardResult {
@@ -14,6 +15,7 @@ interface ActiveBoardResult {
 let instanceCounter = 0;
 
 export function useActiveBoard(): ActiveBoardResult {
+  const shiftTypesQuery = useShiftTypes();
   const [board, setBoard] = useState<RosterBoard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -29,9 +31,14 @@ export function useActiveBoard(): ActiveBoardResult {
   }
 
   const category = getActiveCategory();
-  const shiftIds = SHIFT_IDS_BY_CATEGORY[category];
+  const shiftIds = useMemo(
+    () => (shiftTypesQuery.data ?? []).filter((s) => s.category === category).map((s) => s.id),
+    [shiftTypesQuery.data, category],
+  );
 
   useEffect(() => {
+    if (shiftTypesQuery.isLoading) return;
+
     let cancelled = false;
 
     async function load() {
@@ -77,7 +84,13 @@ export function useActiveBoard(): ActiveBoardResult {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [category, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [category, tick, shiftTypesQuery.isLoading, shiftIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { board, loading, error, category, refetch: () => setTick((t) => t + 1) };
+  return {
+    board,
+    loading: loading || shiftTypesQuery.isLoading,
+    error: error ?? (shiftTypesQuery.isError ? 'טעינת סוגי המשמרות נכשלה.' : null),
+    category,
+    refetch: () => setTick((t) => t + 1),
+  };
 }
