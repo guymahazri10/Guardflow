@@ -47,7 +47,7 @@ export function ShiftTemplatesPage() {
     }
 
     if (!createCloneFromId) {
-      setCreateError('יש לבחור וריאנט לשכפול.')
+      setCreateError('יש לבחור תבנית לשכפול.')
       return
     }
 
@@ -69,7 +69,7 @@ export function ShiftTemplatesPage() {
   async function handleDeleteVariant(shiftId: string, event: React.MouseEvent) {
     event.stopPropagation()
 
-    if (!window.confirm('האם אתה בטוח שברצונך למחוק את הווריאנט? לא ניתן לשחזר.')) {
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק את התבנית? לא ניתן לשחזר.')) {
       return
     }
 
@@ -112,7 +112,7 @@ export function ShiftTemplatesPage() {
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5 pb-6">
         {templatesQuery.isLoading || shiftTypesQuery.isLoading ? (
           <ListSkeleton />
-        ) : (shiftTypesQuery.data ?? []).length === 0 ? (
+        ) : templatesQuery.isError || shiftTypesQuery.isError ? null : (shiftTypesQuery.data ?? []).length === 0 ? (
           <div className="card p-6 text-center text-sm text-text-secondary">אין תבניות משמרת עדיין.</div>
         ) : (
           (shiftTypesQuery.data ?? []).map((shift) => {
@@ -163,7 +163,7 @@ export function ShiftTemplatesPage() {
             className="w-full max-w-mobile mx-auto bg-white rounded-t-[20px] safe-bottom p-5 flex flex-col gap-4 max-h-[85vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between">
-              <span className="text-sm font-bold text-text-primary">הוסף וריאנט משמרת</span>
+              <span className="text-sm font-bold text-text-primary">הוסף תבנית משמרת</span>
               <button
                 onClick={() => setShowCreateForm(false)}
                 className="text-text-muted p-1 active:opacity-70"
@@ -211,7 +211,7 @@ export function ShiftTemplatesPage() {
             <div>
               <p className="text-xs font-medium text-text-muted mb-1.5">שכפל תוכן מ</p>
               {categoryVariants.length === 0 ? (
-                <p className="text-sm text-text-secondary">אין וריאנט קיים בקטגוריה זו לשכפול.</p>
+                <p className="text-sm text-text-secondary">אין תבנית קיימת בקטגוריה זו לשכפול.</p>
               ) : (
                 <div className="flex flex-col gap-2">
                   {categoryVariants.map((s) => (
@@ -238,7 +238,7 @@ export function ShiftTemplatesPage() {
               disabled={createVariantMutation.isPending || categoryVariants.length === 0}
               className="btn-primary w-full h-14 rounded-[14px] text-[15px] disabled:opacity-40"
             >
-              {createVariantMutation.isPending ? 'יוצר...' : 'צור וריאנט'}
+              {createVariantMutation.isPending ? 'יוצר...' : 'צור תבנית'}
             </button>
           </div>
         </div>

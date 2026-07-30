@@ -26,7 +26,7 @@
 -- 4. A unique (category, guard_count) constraint makes the "no duplicate
 --    variant" invariant declarative — the deterministic id
 --    (category || '_' || guard_count) already caught this in practice via
---    the primary key, but this also close a hypothetical direct-SQL edit
+--    the primary key, but this also closes a hypothetical direct-SQL edit
 --    gap (e.g. the legacy 'night' row's shape colliding with a
 --    would-be 'night_2').
 

@@ -257,9 +257,9 @@ export function AdminPanelPage() {
         >
           <div
             onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-mobile mx-auto bg-white rounded-t-[20px] safe-bottom"
+            className="w-full max-w-mobile mx-auto bg-white rounded-t-[20px] safe-bottom max-h-[85vh] flex flex-col"
           >
-            <div className="px-5 pt-4.5 pb-3.5 border-b border-border flex items-center justify-between">
+            <div className="px-5 pt-4.5 pb-3.5 border-b border-border flex items-center justify-between shrink-0">
               <span className="text-sm font-bold text-text-primary">בחר סוג משמרת</span>
               <button
                 onClick={() => setShowPicker(false)}
@@ -271,12 +271,12 @@ export function AdminPanelPage() {
             </div>
 
             {actionError && (
-              <div className="mx-5 mt-3 rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger">
+              <div className="mx-5 mt-3 rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger shrink-0">
                 {actionError}
               </div>
             )}
 
-            <div className="py-2 pb-1 max-h-[70vh] overflow-y-auto">
+            <div className="py-2 pb-1 flex-1 min-h-0 overflow-y-auto">
               {shiftDisplays.map(({ shift, title, subtitle }) => {
                 const exists = boardByShiftId.has(shift.id)
                 const creating = creatingShiftId === shift.id

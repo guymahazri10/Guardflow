@@ -12,17 +12,23 @@ function getErrorMessage(action: string, error: { message?: string }) {
   return `${action}: ${error.message ?? 'Supabase request failed.'}`
 }
 
+const CATEGORY_ORDER: Record<ShiftCategory, number> = { morning: 0, afternoon: 1, night: 2 }
+
 export async function fetchShiftTypes(): Promise<ShiftTypeRow[]> {
   const { data, error } = await supabase
     .from('shift_types')
     .select('id, category, guard_count, sort_order')
-    .order('sort_order', { ascending: true })
 
   if (error) {
     throw new Error(getErrorMessage('Failed to fetch shift types', error))
   }
 
-  return (data ?? []) as ShiftTypeRow[]
+  const rows = (data ?? []) as ShiftTypeRow[]
+
+  // sort_order is only assigned within a category (see create_shift_type_variant),
+  // so group by category first — otherwise a new variant in one category can tie
+  // with, or sort after, an unrelated variant in a different category.
+  return [...rows].sort((a, b) => CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category] || a.sort_order - b.sort_order)
 }
 
 export type CreateShiftTypeVariantInput = {
