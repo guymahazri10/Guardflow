@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCreateRosterBoard, useDeleteRosterBoard, useRosterBoards } from '../hooks/useRosterBoards'
 import { useShiftTemplates } from '../hooks/useShiftTemplates'
-import { SHIFTS, getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel, type ShiftConfig } from '../constants/shifts'
+import { getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel, type ShiftConfig } from '../constants/shifts'
+import { useShiftTypes } from '../hooks/useShiftTypes'
 import type { RosterBoard } from '../lib/rosterBoards'
 import { ClipboardIcon } from '../components/ui/StateIcon'
 
@@ -20,8 +21,6 @@ function buildShiftDisplay(shift: ShiftConfig): ShiftDisplay {
   }
 }
 
-const SHIFT_DISPLAYS: ShiftDisplay[] = SHIFTS.map(buildShiftDisplay)
-
 function getReadableError(error: unknown) {
   return error instanceof Error ? error.message : 'הפעולה נכשלה. נסה שוב.'
 }
@@ -32,6 +31,11 @@ export function AdminPanelPage() {
   const createRosterBoardMutation = useCreateRosterBoard()
   const deleteRosterBoardMutation = useDeleteRosterBoard()
   const shiftTemplatesQuery = useShiftTemplates()
+  const shiftTypesQuery = useShiftTypes()
+  const shiftDisplays: ShiftDisplay[] = useMemo(
+    () => (shiftTypesQuery.data ?? []).map(buildShiftDisplay),
+    [shiftTypesQuery.data],
+  )
 
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -53,10 +57,10 @@ export function AdminPanelPage() {
     return map
   }, [boards])
 
-  const existingDisplays = SHIFT_DISPLAYS.filter((display) => boardByShiftId.has(display.shift.id))
+  const existingDisplays = shiftDisplays.filter((display) => boardByShiftId.has(display.shift.id))
   const selectedBoard = selectedShiftId ? (boardByShiftId.get(selectedShiftId) ?? null) : null
   const selectedDisplay = selectedShiftId
-    ? (SHIFT_DISPLAYS.find((display) => display.shift.id === selectedShiftId) ?? null)
+    ? (shiftDisplays.find((display) => display.shift.id === selectedShiftId) ?? null)
     : null
 
   const isDeleting = deleteRosterBoardMutation.isPending
@@ -86,7 +90,7 @@ export function AdminPanelPage() {
       return
     }
 
-    const shift = SHIFTS.find((s) => s.id === shiftId)
+    const shift = shiftTypesQuery.data?.find((s) => s.id === shiftId)
 
     if (!shift) {
       setActionError('לא נמצאה תבנית למשמרת שנבחרה.')
@@ -173,7 +177,7 @@ export function AdminPanelPage() {
 
       {/* ── Existing boards list ── */}
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5 pb-6">
-        {rosterBoardsQuery.isLoading ? (
+        {rosterBoardsQuery.isLoading || shiftTypesQuery.isLoading ? (
           <ListSkeleton />
         ) : existingDisplays.length === 0 ? (
           <EmptyState />
@@ -273,10 +277,10 @@ export function AdminPanelPage() {
             )}
 
             <div className="py-2 pb-1">
-              {SHIFT_DISPLAYS.map(({ shift, title, subtitle }) => {
+              {shiftDisplays.map(({ shift, title, subtitle }) => {
                 const exists = boardByShiftId.has(shift.id)
                 const creating = creatingShiftId === shift.id
-                const templatesLoading = shiftTemplatesQuery.isLoading
+                const templatesLoading = shiftTemplatesQuery.isLoading || shiftTypesQuery.isLoading
 
                 return (
                   <button
