@@ -6,11 +6,10 @@ import {
   getActiveCategory,
   getShiftHoursLabel,
   getShiftShortLabel,
-  getShiftsByCategory,
   SHIFT_CATEGORIES,
-  SHIFT_IDS_BY_CATEGORY,
   type ShiftCategory,
 } from '../constants/shifts'
+import { useShiftTypes } from '../hooks/useShiftTypes'
 import { useRosterBoardsByShiftId, useUpdateGuardNames } from '../hooks/useRosterBoards'
 import { useProfiles } from '../hooks/useProfiles'
 import type { ProfileListItem } from '../lib/profiles'
@@ -34,10 +33,23 @@ export function ShiftSetupPage() {
   const canEdit = isAdmin || isCommander
   const navigate = useNavigate()
 
+  const shiftTypesQuery = useShiftTypes()
+  const allShifts = shiftTypesQuery.data ?? []
+
   const [category, setCategory] = useState<ShiftCategory>(() => getActiveCategory())
-  const [selectedShiftId, setSelectedShiftId] = useState<string>(
-    () => SHIFT_IDS_BY_CATEGORY[getActiveCategory()][0],
-  )
+  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
+
+  // Picks the first variant in the active category once shift types load —
+  // can't do this synchronously anymore since the catalog is now async.
+  const didInitRef = useRef(false)
+  useEffect(() => {
+    if (didInitRef.current || allShifts.length === 0) return
+    const firstInCategory = allShifts.find((s) => s.category === category)
+    if (firstInCategory) {
+      setSelectedShiftId(firstInCategory.id)
+      didInitRef.current = true
+    }
+  }, [allShifts, category])
   const [guardNames, setGuardNames] = useState<Record<string, GuardAssignment>>({})
 
   const boardsQuery = useRosterBoardsByShiftId(selectedShiftId)
@@ -66,7 +78,8 @@ export function ShiftSetupPage() {
 
   function handleCategoryChange(cat: ShiftCategory) {
     setCategory(cat)
-    setSelectedShiftId(SHIFT_IDS_BY_CATEGORY[cat][0])
+    const firstInCategory = allShifts.find((s) => s.category === cat)
+    setSelectedShiftId(firstInCategory?.id ?? null)
   }
 
   function handleAssignmentChange(role: string, assignment: GuardAssignment) {
@@ -95,7 +108,7 @@ export function ShiftSetupPage() {
   }
 
   // ── Derived ──
-  const shifts = getShiftsByCategory(category)
+  const shifts = allShifts.filter((s) => s.category === category)
   const cols: string[] = board?.cols ?? []
   const hasAnyName = cols.some((role) => guardNames[role]?.name.trim())
   const saving = updateGuardNamesMutation.isPending
@@ -156,55 +169,63 @@ export function ShiftSetupPage() {
       {/* ── Scrollable body ── */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-6">
         {/* Shift variant cards */}
-        <div className={`grid gap-3 ${shifts.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-          {shifts.map((shift) => {
-            const selected = shift.id === selectedShiftId
-            return (
-              <button
-                key={shift.id}
-                onClick={() => setSelectedShiftId(shift.id)}
-                className={`card p-3.5 text-right transition-all active:scale-[0.98] ${
-                  selected ? 'ring-2 ring-primary' : ''
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  {/* Checkmark circle */}
-                  <div
-                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-                      selected ? 'border-primary bg-primary' : 'border-border'
-                    }`}
-                  >
-                    {selected && (
-                      <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
-                        <path
-                          d="M1.5 5l2.5 2.5 4.5-4.5"
-                          stroke="white"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    )}
-                  </div>
-
-                  {/* Text */}
-                  <div className="flex-1 text-right">
-                    <p
-                      className={`text-sm font-semibold leading-snug ${
-                        selected ? 'text-primary' : 'text-text-primary'
+        {shiftTypesQuery.isLoading ? (
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2].map((i) => (
+              <div key={i} className="card p-3.5 h-[72px] animate-pulse" />
+            ))}
+          </div>
+        ) : (
+          <div className={`grid gap-3 ${shifts.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            {shifts.map((shift) => {
+              const selected = shift.id === selectedShiftId
+              return (
+                <button
+                  key={shift.id}
+                  onClick={() => setSelectedShiftId(shift.id)}
+                  className={`card p-3.5 text-right transition-all active:scale-[0.98] ${
+                    selected ? 'ring-2 ring-primary' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    {/* Checkmark circle */}
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
+                        selected ? 'border-primary bg-primary' : 'border-border'
                       }`}
                     >
-                      {getShiftShortLabel(shift)}
-                    </p>
-                    <p className="text-[11px] text-text-muted mt-0.5 tabular-nums" dir="ltr">
-                      {getShiftHoursLabel(shift)}
-                    </p>
+                      {selected && (
+                        <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                          <path
+                            d="M1.5 5l2.5 2.5 4.5-4.5"
+                            stroke="white"
+                            strokeWidth="1.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </div>
+
+                    {/* Text */}
+                    <div className="flex-1 text-right">
+                      <p
+                        className={`text-sm font-semibold leading-snug ${
+                          selected ? 'text-primary' : 'text-text-primary'
+                        }`}
+                      >
+                        {getShiftShortLabel(shift)}
+                      </p>
+                      <p className="text-[11px] text-text-muted mt-0.5 tabular-nums" dir="ltr">
+                        {getShiftHoursLabel(shift)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {/* Guard name inputs */}
         {loading ? (
