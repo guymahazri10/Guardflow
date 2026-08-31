@@ -9,6 +9,7 @@ import { AdminPanelPage } from '../pages/AdminPanelPage'
 import { LoginPage } from '../pages/LoginPage'
 import { ProfilePage } from '../pages/ProfilePage'
 import { RosterEditorPage } from '../pages/RosterEditorPage'
+import { ScheduleImportPage } from '../pages/ScheduleImportPage'
 import { ShiftLivePage } from '../pages/ShiftLivePage'
 import { ShiftSetupPage } from '../pages/ShiftSetupPage'
 import { ShiftTemplateEditorPage } from '../pages/ShiftTemplateEditorPage'
@@ -32,6 +33,7 @@ export function AppRouter() {
             <Route path="/roster-editor" element={<RosterEditorPage />} />
             <Route path="/users" element={<UserManagementPage />} />
             <Route path="/shift-templates" element={<ShiftTemplatesListOrEditor />} />
+            <Route path="/schedule-import" element={<ScheduleImportPage />} />
           </Route>
         </Route>
       </Route>

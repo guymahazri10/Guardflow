@@ -4,6 +4,7 @@ import { useCreateRosterBoard, useDeleteRosterBoard, useRosterBoards } from '../
 import { useShiftTemplates } from '../hooks/useShiftTemplates'
 import { getShiftFullTitle, getShiftHoursLabel, getShiftShortLabel, type ShiftConfig } from '../constants/shifts'
 import { useShiftTypes } from '../hooks/useShiftTypes'
+import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import type { RosterBoard } from '../lib/rosterBoards'
 import { ClipboardIcon } from '../components/ui/StateIcon'
 
@@ -27,6 +28,7 @@ function getReadableError(error: unknown) {
 
 export function AdminPanelPage() {
   const navigate = useNavigate()
+  const scheduleImportFlag = useFeatureFlag('weekly_schedule_import')
   const rosterBoardsQuery = useRosterBoards()
   const createRosterBoardMutation = useCreateRosterBoard()
   const deleteRosterBoardMutation = useDeleteRosterBoard()
@@ -146,6 +148,15 @@ export function AdminPanelPage() {
           >
             תבניות משמרת
           </button>
+          {scheduleImportFlag.enabled && (
+            <button
+              type="button"
+              onClick={() => navigate('/schedule-import')}
+              className="px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
+            >
+              ייבוא סידור שבועי
+            </button>
+          )}
           <button
             onClick={() => setShowPicker(true)}
             className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"

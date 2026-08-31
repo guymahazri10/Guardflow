@@ -14,6 +14,7 @@ import {
   callPublishScheduleImport,
 } from '../lib/scheduleImports'
 import { useProfiles } from '../hooks/useProfiles'
+import { useFeatureFlag } from '../hooks/useFeatureFlag'
 
 type WizardStep = 'upload' | 'processing' | 'preview' | 'error'
 
@@ -29,6 +30,8 @@ function getPreviousSunday(date: Date): Date {
 }
 
 export function ScheduleImportPage() {
+  const flag = useFeatureFlag('weekly_schedule_import')
+
   const [step, setStep] = useState<WizardStep>('upload')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [importId, setImportId] = useState<string | null>(null)
@@ -37,6 +40,15 @@ export function ScheduleImportPage() {
   const [stats, setStats] = useState({ imported: 0, skipped: 0, unmatched_names: 0 })
 
   const profilesQuery = useProfiles()
+
+  if (flag.loading) return null
+  if (!flag.enabled) {
+    return (
+      <div dir="rtl" className="p-4">
+        <p>התכונה אינה זמינה כרגע.</p>
+      </div>
+    )
+  }
 
   async function handleFileSelected(file: File) {
     if (profilesQuery.isLoading) {
