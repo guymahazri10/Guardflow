@@ -3,7 +3,7 @@ import { parsePdfSchedule } from './parsePdfSchedule'
 
 vi.mock('pdfjs-dist', () => {
   return {
-    getDocument: (_opts: unknown) => ({
+    getDocument: () => ({
       promise: Promise.resolve({
         numPages: 1,
         getPage: async () => ({
