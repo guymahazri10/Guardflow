@@ -10,6 +10,8 @@ import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
+import { useAuth } from '../contexts/AuthContext'
+import { AssignmentSwapModal } from '../components/AssignmentSwapModal'
 
 /** Shared "dated assignment vs legacy roster name" state, threaded from the
  *  page root down into NowTab/AllShiftTab so both tabs share one query. */
@@ -17,6 +19,8 @@ type DatedAssignmentContext = {
   scheduleImportEnabled: boolean
   assignmentsQuery: ReturnType<typeof useShiftAssignmentsForWeek>
   todayIso: string
+  canSwap: boolean
+  onSwapClick: (assignmentId: string) => void
 }
 
 type Tab = 'now' | 'all'
@@ -45,10 +49,15 @@ export function ShiftLivePage() {
     return d.toISOString().slice(0, 10)
   })()
   const assignmentsQuery = useShiftAssignmentsForWeek(scheduleImportFlag.enabled ? weekStartIso : '')
+  const { isAdmin, isCommander } = useAuth()
+  const canSwap = isAdmin || isCommander
+  const [swapAssignmentId, setSwapAssignmentId] = useState<string | null>(null)
   const datedCtx: DatedAssignmentContext = {
     scheduleImportEnabled: scheduleImportFlag.enabled,
     assignmentsQuery,
     todayIso,
+    canSwap,
+    onSwapClick: setSwapAssignmentId,
   }
 
   return (
@@ -99,6 +108,14 @@ export function ShiftLivePage() {
           <AllShiftTab board={board} cols={cols} currentBlock={currentBlock} datedCtx={datedCtx} />
         )}
       </div>
+
+      {swapAssignmentId && (
+        <AssignmentSwapModal
+          assignmentId={swapAssignmentId}
+          onClose={() => setSwapAssignmentId(null)}
+          onSaved={() => setSwapAssignmentId(null)}
+        />
+      )}
     </div>
   )
 }
@@ -225,6 +242,8 @@ function datedOrLegacyName({
   scheduleImportEnabled,
   assignmentsQuery,
   todayIso,
+  canSwap,
+  onSwapClick,
 }: {
   legacyName: string | null
   position: string
@@ -240,11 +259,19 @@ function datedOrLegacyName({
   const plannedLabel = dated.source_name ?? '—'
   const actualLabel = dated.actual_name ?? plannedLabel
 
-  return (
+  const content = (
     <div>
       <div>תוכנן: {plannedLabel}</div>
       {dated.is_manually_edited && <div>בפועל: {actualLabel}</div>}
     </div>
+  )
+
+  if (!canSwap) return content
+
+  return (
+    <button type="button" onClick={() => onSwapClick(dated.id)} className="text-right w-full">
+      {content}
+    </button>
   )
 }
 
