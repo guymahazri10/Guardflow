@@ -16,6 +16,7 @@ import {
 import { useProfiles } from '../hooks/useProfiles'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import { useAuth } from '../contexts/AuthContext'
+import { utcIsoToIsraelHHMM } from '../lib/israelTime'
 
 type WizardStep = 'upload' | 'processing' | 'preview' | 'error'
 
@@ -340,7 +341,7 @@ function SchedulePreview({
                 <td>{a.worker_kind}</td>
                 <td>{a.position}</td>
                 <td>
-                  {new Date(a.starts_at).toISOString().slice(11, 16)}–{new Date(a.ends_at).toISOString().slice(11, 16)}
+                  {utcIsoToIsraelHHMM(a.starts_at)}–{utcIsoToIsraelHHMM(a.ends_at)}
                 </td>
                 <td>
                   <input

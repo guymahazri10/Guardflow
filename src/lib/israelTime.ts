@@ -26,6 +26,13 @@ const partsFormatter = new Intl.DateTimeFormat('en-US', {
   second: '2-digit',
 })
 
+const hhmmFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: TIME_ZONE,
+  hour12: false,
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
 function readZonedParts(date: Date): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
   const parts = partsFormatter.formatToParts(date)
   const map: Record<string, string> = {}
@@ -79,4 +86,29 @@ export function toLocalDateIso(date: Date): string {
   const month = date.getMonth() + 1
   const day = date.getDate()
   return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+/**
+ * Formats a UTC ISO instant (e.g. a `starts_at`/`ends_at` value) as its
+ * Asia/Jerusalem wall-clock "HH:MM", DST-aware. This is the inverse of
+ * `israelLocalToUtcIso`'s conversion — use it anywhere a stored UTC instant
+ * needs to be shown back to a manager as the local time they expect (e.g. a
+ * schedule-import preview table), instead of `.toISOString().slice(11, 16)`,
+ * which reads the UTC clock time, not Israel local time.
+ */
+export function utcIsoToIsraelHHMM(isoString: string): string {
+  return hhmmFormatter.format(new Date(isoString))
+}
+
+/**
+ * Shifts a YYYY-MM-DD calendar date by `days` (may be negative), returning
+ * the result as YYYY-MM-DD. Pure calendar-date arithmetic — no timezone
+ * conversion involved, since the input/output are already local dates (e.g.
+ * `toLocalDateIso`'s output).
+ */
+export function addDaysIso(dateIso: string, days: number): string {
+  const [year, month, day] = dateIso.split('-').map(Number)
+  const d = new Date(year, month - 1, day)
+  d.setDate(d.getDate() + days)
+  return toLocalDateIso(d)
 }
