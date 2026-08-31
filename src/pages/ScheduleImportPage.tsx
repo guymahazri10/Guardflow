@@ -32,6 +32,17 @@ export function ScheduleImportPage() {
   const profilesQuery = useProfiles()
 
   async function handleFileSelected(file: File) {
+    if (profilesQuery.isLoading) {
+      setErrorMessage('טוען רשימת עובדים, נסה שוב בעוד רגע.')
+      setStep('error')
+      return
+    }
+    if (profilesQuery.isError) {
+      setErrorMessage('טעינת רשימת העובדים נכשלה. נסה לרענן את הדף.')
+      setStep('error')
+      return
+    }
+
     setStep('processing')
     setErrorMessage(null)
 
@@ -100,11 +111,13 @@ export function ScheduleImportPage() {
         <input
           type="file"
           accept=".xls,.xlsx,.pdf"
+          disabled={profilesQuery.isLoading}
           onChange={(e) => {
             const file = e.target.files?.[0]
             if (file) void handleFileSelected(file)
           }}
         />
+        {profilesQuery.isLoading && <p className="text-sm text-gray-500 mt-2">טוען רשימת עובדים…</p>}
       </div>
     )
   }
