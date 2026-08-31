@@ -65,8 +65,12 @@ export async function uploadScheduleFile(
   const safeName = sanitizeFilename(file.name)
   const storagePath = `${weekStart}/${importId}/${safeName}`
 
+  // upsert: true — a duplicate upload (identical week_start + content_hash)
+  // resumes the existing schedule_imports row (see createScheduleImport),
+  // which reuses the same storage_path/import id, so re-uploading the same
+  // bytes to that path must not fail as a conflict.
   const { error } = await supabase.storage.from('schedule-imports').upload(storagePath, file, {
-    upsert: false,
+    upsert: true,
   })
 
   if (error) {
@@ -75,6 +79,11 @@ export async function uploadScheduleFile(
 
   return { storagePath }
 }
+
+/** Postgres unique_violation error code, used to detect a re-upload of the
+ *  identical file (same week_start + content_hash) hitting
+ *  schedule_imports_week_start_content_hash_key. */
+const POSTGRES_UNIQUE_VIOLATION = '23505'
 
 export async function createScheduleImport(input: {
   week_start: string
@@ -91,6 +100,23 @@ export async function createScheduleImport(input: {
     .single()
 
   if (error) {
+    if ((error as { code?: string }).code === POSTGRES_UNIQUE_VIOLATION) {
+      // Identical file (same week_start + content_hash) already uploaded —
+      // resume the existing import row instead of surfacing a raw Postgres
+      // constraint error, so the manager can still see/re-publish its preview.
+      const existing = await supabase
+        .from('schedule_imports')
+        .select()
+        .eq('week_start', input.week_start)
+        .eq('content_hash', input.content_hash)
+        .maybeSingle()
+
+      if (existing.data) {
+        return existing.data as ScheduleImportRow
+      }
+
+      throw new Error('קובץ זה כבר הועלה עבור שבוע זה.')
+    }
     throw new Error(getErrorMessage('Failed to create schedule import record', error))
   }
 
