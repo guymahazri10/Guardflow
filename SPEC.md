@@ -59,6 +59,12 @@ GuardFlow היא אפליקציית ווב (mobile-first, RTL בעברית) לנ
 ### 3.2 `shift_staffing` — נמחקה (Phase 7)
 הטבלה נמחקה לגמרי ([phase8_drop_shift_staffing.sql](supabase/phase8_drop_shift_staffing.sql)) לאחר שאושר שהיא ריקה (0 שורות) ושאין קוד שמפנה אליה. אין לשחזר אותה — כל השמות חיים ב־`roster_boards.guard_names` (3.1).
 
+### 3.2א `shift_assignments` — שכבת שיבוץ מתוארכת (ייבוא סידור שבועי)
+
+בנוסף ל־`roster_boards.guard_names` (שמות לא־מתוארכים, צמודים ללוח — ר' 3.1, **ללא שינוי**), נוספה טבלת `shift_assignments`: שיבוץ **מתוארך** (`work_date` × `shift_category` × `position` × `slot_index`), מיובא מקובצי Excel/PDF שבועיים דרך `/schedule-import` (מנהל בלבד, מאחורי feature flag `weekly_schedule_import`). כתיבה רק דרך RPC (`publish_schedule_import`, `replace_assignment_worker`) — אין policy כתיבה ישירה. שינויים ידניים (`is_manually_edited`) לא נדרסים בייבוא חוזר אלא אם המנהל בחר "revert_to_file" מפורשות. תיעוד מלא: [docs/superpowers/specs/2026-08-31-weekly-schedule-import-design.md](docs/superpowers/specs/2026-08-31-weekly-schedule-import-design.md).
+
+**זה לא שובר את חוק 3.4** — `roster_boards.guard_names` נשאר מקור האמת היחיד לשמות **הלא־מתוארכים**; `shift_assignments` הוא ממד נוסף (תאריך) שלא היה קיים קודם, לא נתיב כתיבה/קריאה מקביל לאותו מידע.
+
 ### 3.3 `profiles` — משתמש + תפקיד
 עמודות: `id` (=`auth.users.id`), `email`, `full_name`, `app_role` (מוגבל ל־`מנהל`/`אחמ"ש`/`מאבטח`, ברירת מחדל `מאבטח`), timestamps.
 - טריגרים: `handle_new_user_profile` (יוצר שורה אוטומטית בהרשמה), `set_profiles_updated_at`.
