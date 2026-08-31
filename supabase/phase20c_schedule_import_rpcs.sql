@@ -83,7 +83,7 @@ begin
         returning id into new_assignment_id;
 
         insert into public.staffing_change_log (assignment_id, to_user_id, to_name, change_kind, changed_by)
-        values (new_assignment_id, incoming.planned_user_id, incoming.source_name, 'import_update', auth.uid());
+        values (new_assignment_id, incoming.planned_user_id, incoming.source_name, 'import_insert', auth.uid());
       else
         -- Compare against what the row's actual_user_id / actual_name / is_manually_edited
         -- would actually become (only reassigned on an explicit revert_to_file) rather than
@@ -114,11 +114,23 @@ begin
             updated_at = now()
           where id = existing_row.id;
 
+          -- By this point either resolution = 'revert_to_file' (a manually-edited
+          -- row the manager explicitly chose to overwrite), or the earlier
+          -- to_skip_manual/continue branch already filtered out every row where
+          -- existing_row.is_manually_edited was true and resolution wasn't
+          -- revert_to_file — so a plain content update reaching here always
+          -- means existing_row.is_manually_edited was false. Label accordingly:
+          -- 'import_kept_manual' is reserved for an actual manually-edited row,
+          -- never used for an ordinary content change.
           insert into public.staffing_change_log (assignment_id, from_user_id, from_name, to_user_id, to_name, change_kind, changed_by)
           values (
             existing_row.id, existing_row.actual_user_id, existing_row.actual_name,
             incoming.planned_user_id, incoming.source_name,
-            case when resolution = 'revert_to_file' then 'import_revert_to_file' else 'import_kept_manual' end,
+            case
+              when resolution = 'revert_to_file' then 'import_revert_to_file'
+              when existing_row.is_manually_edited then 'import_kept_manual'
+              else 'import_update'
+            end,
             auth.uid()
           );
         end if;
@@ -129,7 +141,11 @@ begin
   -- Delete assignments from a prior import for weeks touched by this file
   -- that are no longer present in it and were never manually edited.
   if not p_dry_run then
-    select (p_assignments -> 0 ->> 'work_date')::date into week_start_date;
+    -- Read the authoritative week_start from schedule_imports itself rather
+    -- than p_assignments -> 0, which depends on grid iteration order and can
+    -- be wrong if the first parsed row isn't actually Sunday — that would
+    -- sweep non-manually-edited rows out of the wrong week.
+    select week_start into week_start_date from public.schedule_imports where id = p_import_id;
     if week_start_date is not null then
       delete from public.shift_assignments sa
       where sa.work_date between week_start_date and week_start_date + interval '6 days'

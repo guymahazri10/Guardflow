@@ -58,7 +58,7 @@ create table public.staffing_change_log (
   to_name text,
   reason text,
   change_kind text not null check (
-    change_kind in ('manual_replace', 'import_update', 'import_kept_manual', 'import_revert_to_file')
+    change_kind in ('manual_replace', 'import_insert', 'import_update', 'import_kept_manual', 'import_revert_to_file')
   ),
   changed_by uuid not null references auth.users(id),
   changed_at timestamptz not null default now()
