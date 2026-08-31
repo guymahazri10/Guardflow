@@ -29,6 +29,7 @@ declare
   conflicts jsonb := '[]'::jsonb;
   new_assignment_id uuid;
   week_start_date date;
+  content_changed boolean;
 begin
   if coalesce(caller_role, '') <> 'מנהל' then
     raise exception 'Only מנהל can publish a schedule import' using errcode = '42501';
@@ -84,27 +85,43 @@ begin
         insert into public.staffing_change_log (assignment_id, to_user_id, to_name, change_kind, changed_by)
         values (new_assignment_id, incoming.planned_user_id, incoming.source_name, 'import_update', auth.uid());
       else
-        update public.shift_assignments
-        set
-          starts_at = incoming.starts_at,
-          ends_at = incoming.ends_at,
-          source_name = incoming.source_name,
-          planned_user_id = incoming.planned_user_id,
-          actual_user_id = case when resolution = 'revert_to_file' then incoming.planned_user_id else actual_user_id end,
-          actual_name = case when resolution = 'revert_to_file' then incoming.source_name else actual_name end,
-          is_manually_edited = case when resolution = 'revert_to_file' then false else is_manually_edited end,
-          import_id = p_import_id,
-          published = true,
-          updated_at = now()
-        where id = existing_row.id;
+        -- Compare against what the row's actual_user_id / actual_name / is_manually_edited
+        -- would actually become (only reassigned on an explicit revert_to_file) rather than
+        -- against incoming's raw planned_user_id / source_name, otherwise a keep_manual
+        -- republish would be misdetected as "changed" whenever a prior manual replace had
+        -- already made actual_* diverge from planned_user_id / source_name.
+        content_changed :=
+          existing_row.starts_at is distinct from incoming.starts_at
+          or existing_row.ends_at is distinct from incoming.ends_at
+          or existing_row.source_name is distinct from incoming.source_name
+          or existing_row.planned_user_id is distinct from incoming.planned_user_id
+          or existing_row.actual_user_id is distinct from (case when resolution = 'revert_to_file' then incoming.planned_user_id else existing_row.actual_user_id end)
+          or existing_row.actual_name is distinct from (case when resolution = 'revert_to_file' then incoming.source_name else existing_row.actual_name end)
+          or existing_row.is_manually_edited is distinct from (case when resolution = 'revert_to_file' then false else existing_row.is_manually_edited end);
 
-        insert into public.staffing_change_log (assignment_id, from_user_id, from_name, to_user_id, to_name, change_kind, changed_by)
-        values (
-          existing_row.id, existing_row.actual_user_id, existing_row.actual_name,
-          incoming.planned_user_id, incoming.source_name,
-          case when resolution = 'revert_to_file' then 'import_revert_to_file' else 'import_kept_manual' end,
-          auth.uid()
-        );
+        if resolution = 'revert_to_file' or content_changed then
+          update public.shift_assignments
+          set
+            starts_at = incoming.starts_at,
+            ends_at = incoming.ends_at,
+            source_name = incoming.source_name,
+            planned_user_id = incoming.planned_user_id,
+            actual_user_id = case when resolution = 'revert_to_file' then incoming.planned_user_id else actual_user_id end,
+            actual_name = case when resolution = 'revert_to_file' then incoming.source_name else actual_name end,
+            is_manually_edited = case when resolution = 'revert_to_file' then false else is_manually_edited end,
+            import_id = p_import_id,
+            published = true,
+            updated_at = now()
+          where id = existing_row.id;
+
+          insert into public.staffing_change_log (assignment_id, from_user_id, from_name, to_user_id, to_name, change_kind, changed_by)
+          values (
+            existing_row.id, existing_row.actual_user_id, existing_row.actual_name,
+            incoming.planned_user_id, incoming.source_name,
+            case when resolution = 'revert_to_file' then 'import_revert_to_file' else 'import_kept_manual' end,
+            auth.uid()
+          );
+        end if;
       end if;
     end if;
   end loop;
