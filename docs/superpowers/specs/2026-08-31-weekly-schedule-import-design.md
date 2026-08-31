@@ -161,7 +161,7 @@ All fixtures are synthetic, clearly-labeled test data (e.g. names like `בדיק
 ## Safe rollout path
 
 1. New git branch `feature/weekly-schedule-import` off `main`.
-2. New **Supabase preview branch** (per your decision) — migrations, RPCs, and the new bucket are created there first; nothing in this feature touches the production project until you explicitly say so.
+2. **Local Supabase stack (Docker via the Supabase CLI)** — migrations, RPCs, and the new bucket are created and verified there first; nothing in this feature touches the production project until you explicitly say so. (Revised during implementation: the production project, `graeqyvsipbqfqwhcxlj`, is not on a Supabase plan that supports preview branches — `create_branch` failed with `PaymentRequiredException`. You chose local Docker as the replacement isolation mechanism over upgrading to Pro or applying directly to production.)
 3. All migrations are additive (`create table`, `create policy`, `insert` one flag row) — no `alter`/`drop` on any existing table, no data touched.
 4. `app_feature_flags.weekly_schedule_import` starts `enabled = false`; even after merging to `main` and running the migration against production, the feature is invisible until you flip it on for your own `allowed_user_ids` first.
 5. `publish_schedule_import`'s `dry_run` mode doubles as a built-in "read and preview without writing" mode for validating the parser against your real weekly file before ever publishing.

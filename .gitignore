@@ -9,3 +9,8 @@ dist
 .env.*.local
 !.env.example
 .local-samples
+supabase/config.toml
+supabase/migrations
+supabase/.gitignore
+supabase/.temp
+supabase/.branches

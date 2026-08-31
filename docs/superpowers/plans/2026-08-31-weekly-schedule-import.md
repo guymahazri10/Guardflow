@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let a manager upload a weekly Excel/PDF schedule, review a diffable preview, and publish it as dated staffing (`shift_assignments`) that feeds `ShiftLivePage` alongside — never replacing — the existing non-dated `roster_boards.guard_names` flow, gated behind a feature flag and built first against a Supabase preview branch.
+**Goal:** Let a manager upload a weekly Excel/PDF schedule, review a diffable preview, and publish it as dated staffing (`shift_assignments`) that feeds `ShiftLivePage` alongside — never replacing — the existing non-dated `roster_boards.guard_names` flow, gated behind a feature flag and built first against a local Supabase stack (Docker, via the Supabase CLI).
 
 **Architecture:** Pure, framework-free parser modules (`detectFileKind` → `parseExcelSchedule`/`parsePdfSchedule` → `normalizeSchedule` → `matchNames` → `validateSchedule`) produce a reviewable diff with zero side effects. Two `security definer` RPCs (`publish_schedule_import`, `replace_assignment_worker`) are the only write path into three new additive tables; RLS grants no other insert/update/delete on them. Excel parses client-side; PDF parses in a new edge function. The UI is a new admin-only route plus small, additive hooks into the existing `ShiftLivePage`/`useActiveBoard`, both no-ops when the feature flag is off.
 
@@ -21,7 +21,7 @@
 - Rows with `is_manually_edited = true` are never overwritten by an import unless the manager explicitly resolves them as `revert_to_file`. (Spec: publish_schedule_import)
 - The entire feature (route, admin card, Live-page dated view) is invisible unless `app_feature_flags.weekly_schedule_import` is enabled for the current user; with it off, `ShiftLivePage`/`useActiveBoard` behave byte-for-byte as today. (Spec: Client-side integration)
 - All test fixtures are synthetic data clearly labeled as test data (e.g. `בדיקה־א׳`), never real personnel names. (Spec: Testing)
-- Work happens on a Supabase **preview branch**, not the production project, until the user explicitly approves promoting to production. (Spec: Safe rollout path)
+- Work happens against a **local Supabase stack (Docker via the Supabase CLI)**, not the production project, until the user explicitly approves promoting to production. The production project is not on a plan that supports Supabase preview branches (confirmed 2026-08-31: `create_branch` failed with `PaymentRequiredException`); local Docker replaces preview branches as the isolation mechanism per the user's explicit choice. (Spec: Safe rollout path; Ruling: see plan ledger)
 
 ---
 
@@ -1423,7 +1423,7 @@ git commit -m "Add parseImageSchedule phase-1 stub (image import deferred to pha
 
 ---
 
-## Task 9: Database schema — three new tables + feature flags (Supabase preview branch)
+## Task 9: Database schema — three new tables + feature flags (local Supabase stack)
 
 **Files:**
 - Create: `supabase/phase20_schedule_import_schema.sql`
@@ -1431,9 +1431,11 @@ git commit -m "Add parseImageSchedule phase-1 stub (image import deferred to pha
 **Interfaces:**
 - Produces: tables `public.schedule_imports`, `public.shift_assignments`, `public.staffing_change_log`, `public.app_feature_flags`, matching the spec's Data model section exactly
 
-- [ ] **Step 1: Create a Supabase preview branch**
+- [ ] **Step 1: Local Supabase stack (already running)**
 
-Use the `mcp__supabase__create_branch` tool (or `supabase branches create` CLI) to create a preview branch off the current project. Confirm with the user which branch name to use before creating it, since branch creation talks to the real Supabase project (non-destructive, but a side-effectful action worth confirming per the safety rules). Record the branch's connection details for use in subsequent steps.
+The controller already set this up before dispatching this task — do not redo it, just use it: `supabase/config.toml` was created via `npx supabase init` with all local ports shifted by +1000 (55321–55329) to avoid colliding with an unrelated project's local Supabase stack that was already running on this machine. All 24 of the project's existing flat `supabase/phase*.sql`/`schema.sql`/`rls.sql` files were copied into `supabase/migrations/` with sequential timestamps (`20260101000001`–`20260101000024`, in the order documented in SPEC.md §3) and applied via `npx supabase db reset`, so the local Postgres instance now has the exact same 7 baseline tables (`profiles`, `roster_boards`, `shift_types`, `shift_templates`, `push_subscriptions`, `push_notification_log`, `pending_invites`) and their RLS/functions as production. Verify this is still the case before proceeding: `docker exec supabase_db_guardflow psql -U postgres -d postgres -c "\dt public.*"` should list all 7 tables. If the containers aren't running, start them with `npx supabase start` (from the repo root) — do not run `npx supabase init` again (it already exists) and do not change the ports in `supabase/config.toml`.
+
+Note: `supabase/migrations/` is a local-only bootstrap convenience (not part of this feature's deliverable) — it is git-ignored, not committed. This task's actual deliverable stays `supabase/phase20_schedule_import_schema.sql`, in the project's existing flat-file convention, applied directly against the local Postgres container (see Step 3) — not folded into `supabase/migrations/`.
 
 - [ ] **Step 2: Write the migration file**
 
@@ -1521,13 +1523,22 @@ insert into public.app_feature_flags (id, enabled, allowed_user_ids)
 values ('weekly_schedule_import', false, '{}');
 ```
 
-- [ ] **Step 3: Apply the migration to the preview branch**
+- [ ] **Step 3: Apply the migration to the local stack**
 
-Use `mcp__supabase__apply_migration` targeting the preview branch (never the production project directly) with the SQL above.
+Apply the SQL above directly to the local Postgres container (never the production project):
+
+```bash
+docker exec -i supabase_db_guardflow psql -U postgres -d postgres < supabase/phase20_schedule_import_schema.sql
+```
 
 - [ ] **Step 4: Verify the tables exist**
 
-Use `mcp__supabase__list_tables` against the preview branch and confirm `schedule_imports`, `shift_assignments`, `staffing_change_log`, `app_feature_flags` are present with the expected columns.
+```bash
+docker exec supabase_db_guardflow psql -U postgres -d postgres -c "\dt public.schedule_imports public.shift_assignments public.staffing_change_log public.app_feature_flags"
+docker exec supabase_db_guardflow psql -U postgres -d postgres -c "select id, enabled, allowed_user_ids from public.app_feature_flags"
+```
+
+Confirm all 4 tables are listed and the seeded `weekly_schedule_import` row (`enabled = false`) is present.
 
 - [ ] **Step 5: Commit the migration file**
 
@@ -1602,17 +1613,24 @@ create policy "app_feature_flags update manager"
   with check (public.get_my_role() = 'מנהל');
 ```
 
-- [ ] **Step 2: Apply to the preview branch**
+- [ ] **Step 2: Apply to the local stack**
 
-Use `mcp__supabase__apply_migration` against the preview branch.
+```bash
+docker exec -i supabase_db_guardflow psql -U postgres -d postgres < supabase/phase20b_schedule_import_rls.sql
+```
 
 - [ ] **Step 3: Verify with advisors**
 
-Run `mcp__supabase__get_advisors` (security category) against the preview branch and confirm no new high-severity findings related to these tables.
+`mcp__supabase__get_advisors` is a hosted-project-only feature and has no local equivalent — skip it here. Run it once against production during the promotion step (Task 23-equivalent for production rollout, after user approval), not as part of local development.
 
 - [ ] **Step 4: Manually verify the flag is readable**
 
-Use `mcp__supabase__execute_sql` against the preview branch (as the anon/service context, not bypassing RLS) to confirm `select * from app_feature_flags` returns the seeded `weekly_schedule_import` row for an authenticated test session, and that `select * from shift_assignments` returns zero rows (table is empty, but the policy itself should not error).
+```bash
+docker exec supabase_db_guardflow psql -U postgres -d postgres -c "select * from app_feature_flags"
+docker exec supabase_db_guardflow psql -U postgres -d postgres -c "select count(*) from shift_assignments"
+```
+
+Confirm the seeded `weekly_schedule_import` row is returned and `shift_assignments` returns `0` without an RLS error (this direct psql connection is the postgres superuser, not RLS-restricted — RLS-as-a-real-user checks happen via the RPC tests in Task 11 Step 3, which impersonate real JWTs).
 
 - [ ] **Step 5: Commit**
 
@@ -1834,19 +1852,53 @@ comment on function public.replace_assignment_worker(uuid, uuid, text, text) is
   'Manager can replace any assignment worker. אחמ"ש can only replace the worker on an assignment currently in progress (now between starts_at and ends_at). Always logs to staffing_change_log.';
 ```
 
-- [ ] **Step 2: Apply to the preview branch**
+- [ ] **Step 2: Apply to the local stack**
 
-Use `mcp__supabase__apply_migration` against the preview branch.
+```bash
+docker exec -i supabase_db_guardflow psql -U postgres -d postgres < supabase/phase20c_schedule_import_rpcs.sql
+```
 
 - [ ] **Step 3: Manually verify both RPCs with real calls**
 
-Using `mcp__supabase__execute_sql` against the preview branch (impersonating test manager/commander/guard sessions, matching the pattern used for Phase 6/7's live RLS verification per ROADMAP.md):
-- Call `publish_schedule_import` with `p_dry_run = true` and a small synthetic assignments array; confirm it returns a diff and writes zero rows (`select count(*) from shift_assignments` stays 0).
-- Call it again with `p_dry_run = false`; confirm rows appear and `staffing_change_log` has matching entries.
+Create three synthetic local test users first (clearly-labeled test data, never real personnel — matches the plan's testing constraint), one per role, directly via SQL since this is local-only:
+
+```bash
+docker exec -i supabase_db_guardflow psql -U postgres -d postgres <<'EOF'
+insert into auth.users (id, email) values
+  ('00000000-0000-0000-0000-000000000001', 'test-manager@local.test'),
+  ('00000000-0000-0000-0000-000000000002', 'test-commander@local.test'),
+  ('00000000-0000-0000-0000-000000000003', 'test-guard@local.test')
+on conflict (id) do nothing;
+
+insert into public.profiles (id, email, full_name, app_role) values
+  ('00000000-0000-0000-0000-000000000001', 'test-manager@local.test', 'בדיקה מנהל', 'מנהל'),
+  ('00000000-0000-0000-0000-000000000002', 'test-commander@local.test', 'בדיקה אחמש', 'אחמ"ש'),
+  ('00000000-0000-0000-0000-000000000003', 'test-guard@local.test', 'בדיקה מאבטח', 'מאבטח')
+on conflict (id) do update set app_role = excluded.app_role;
+EOF
+```
+
+Then impersonate each role in a psql session using the same `request.jwt.claim.sub` technique ROADMAP.md documents was already used to verify Phase 6/7's live RLS (`SET LOCAL ROLE authenticated; SET LOCAL request.jwt.claim.sub = '<test user id>';` before each RPC call, inside a transaction so the impersonation doesn't leak to later statements):
+
+```bash
+docker exec -i supabase_db_guardflow psql -U postgres -d postgres <<'EOF'
+begin;
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001'; -- manager
+select public.publish_schedule_import(
+  gen_random_uuid(), '[]'::jsonb, '{}'::jsonb, true
+);
+rollback;
+EOF
+```
+
+Run through all of:
+- Call `publish_schedule_import` with `p_dry_run = true` and a small synthetic assignments array (as manager); confirm it returns a diff and writes zero rows (`select count(*) from shift_assignments` stays 0).
+- Call it again with `p_dry_run = false` (as manager, in its own committed transaction — do not `rollback` this one); confirm rows appear and `staffing_change_log` has matching entries.
 - Call it a second time with the identical assignments; confirm no new rows, no duplicate log entries (idempotency).
-- Attempt the call as a guard (`מאבטח`); confirm it raises `42501`.
-- Call `replace_assignment_worker` as manager on an assignment outside its time window; confirm it succeeds (manager has no time restriction).
-- Call it as a commander (`אחמ"ש`) on an assignment outside its time window; confirm `42501`. Then on one within its time window; confirm success.
+- Attempt the call as the guard test user (`request.jwt.claim.sub` = the guard id); confirm it raises `42501`.
+- Call `replace_assignment_worker` as the manager test user on an assignment outside its time window; confirm it succeeds (manager has no time restriction).
+- Call it as the commander test user on an assignment outside its time window; confirm `42501`. Then on one within its time window; confirm success.
 
 - [ ] **Step 4: Commit**
 
@@ -1901,13 +1953,19 @@ create policy "schedule-imports manager delete"
   using (bucket_id = 'schedule-imports' and public.get_my_role() = 'מנהל');
 ```
 
-- [ ] **Step 2: Apply to the preview branch**
+- [ ] **Step 2: Apply to the local stack**
 
-Use `mcp__supabase__apply_migration`.
+```bash
+docker exec -i supabase_db_guardflow psql -U postgres -d postgres < supabase/phase20d_schedule_import_storage.sql
+```
 
 - [ ] **Step 3: Verify bucket is private**
 
-Use `mcp__supabase__execute_sql` to `select id, public from storage.buckets where id = 'schedule-imports'` and confirm `public = false`.
+```bash
+docker exec supabase_db_guardflow psql -U postgres -d postgres -c "select id, public from storage.buckets where id = 'schedule-imports'"
+```
+
+Confirm `public = false`.
 
 - [ ] **Step 4: Commit**
 
@@ -2390,13 +2448,19 @@ serve(async (req) => {
 
 Note: this function returns the raw `grid`; `normalizeSchedule`/`matchNames`/`validateSchedule` still run client-side on the returned grid (same modules used for the Excel path), so the Deno/browser duplication is limited to grid extraction only, not the allowlist/business logic — keeping the single-source-of-truth pipeline the spec requires.
 
-- [ ] **Step 3: Deploy to the preview branch**
+- [ ] **Step 3: Serve locally**
 
-Use `mcp__supabase__deploy_edge_function` targeting the preview branch.
+```bash
+npx supabase functions serve parse-schedule --env-file supabase/functions/.env.local
+```
+
+(Create `supabase/functions/.env.local` — gitignored — with `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` copied from `npx supabase status`'s local output, if the CLI doesn't already inject them automatically for local serving.)
 
 - [ ] **Step 4: Manually verify with a real PDF upload**
 
-Upload a small synthetic text-layer PDF fixture to the `schedule-imports` bucket on the preview branch, call the deployed function with its path and a valid manager JWT, and confirm it returns `{ supported: true, grid: [...] }`. Then call it with a guard JWT and confirm a 403.
+Upload a small synthetic text-layer PDF fixture to the `schedule-imports` bucket on the local stack (via the JS client against the local `API_URL`, or `docker exec` + direct storage insert), obtain a real JWT for the manager test user created in Task 11 Step 3 (via the local GoTrue admin API or `supabase auth` CLI helpers), call the locally-served function with the file's storage path and that JWT, and confirm it returns `{ supported: true, grid: [...] }`. Then call it with the guard test user's JWT and confirm a 403.
+
+Actual deployment to production (`supabase functions deploy` or the `mcp__supabase__deploy_edge_function` tool) happens only after the user explicitly approves promoting this feature to production — not part of this task.
 
 - [ ] **Step 5: Commit**
 
@@ -2817,9 +2881,20 @@ Then render a card conditionally (find where other admin cards/links are rendere
 
 Read the surrounding JSX in `AdminPanelPage.tsx` first to match its actual existing card/button markup and class names exactly, rather than inventing new styling.
 
-- [ ] **Step 3: Manually verify the flag gate**
+- [ ] **Step 3: Point the dev server at the local stack, then verify the flag gate**
 
-Run `npm run dev`, sign in as a manager. With the `weekly_schedule_import` flag row's `enabled = false` (the seeded default), confirm neither the `/admin` card nor navigating directly to `/schedule-import` shows the feature (route should still resolve — `AdminRoute` still permits access — but the page itself should reasonably handle a disabled flag; add a simple guard inside `ScheduleImportPage` that renders "התכונה אינה זמינה" when `!useFeatureFlag('weekly_schedule_import').enabled`, so a manager who bookmarks the URL doesn't reach a half-built wizard when the flag is off).
+All manual UI verification from this task onward (Tasks 18-20, 23) runs against the **local** Supabase stack, never production. Create a `.env.development.local` (git-ignored automatically by the existing `.env.*` rule in `.gitignore`) with the local stack's URL and anon key from `npx supabase status`:
+
+```
+VITE_SUPABASE_URL=http://127.0.0.1:55321
+VITE_SUPABASE_ANON_KEY=<ANON_KEY from `npx supabase status`>
+```
+
+Vite loads `.env.development.local` automatically for `npm run dev`, overriding `.env.local` — this keeps production credentials in `.env.local` untouched and unused for the rest of this plan's manual verification.
+
+The synthetic test users created via raw SQL in Task 11 Step 3 have no password and cannot sign in through the app's login UI (they bypass GoTrue). For UI-based manual verification, create real local test accounts instead, using the local Studio at the `STUDIO_URL` from `npx supabase status` (e.g. `http://127.0.0.1:55323`) → Authentication → Add user (email + password, e.g. `test-manager@local.test`), then set that user's `profiles.app_role` via `docker exec supabase_db_guardflow psql -U postgres -d postgres -c "update profiles set app_role = 'מנהל', full_name = 'בדיקה מנהל' where email = 'test-manager@local.test'"`. Repeat for a commander and guard test account. These are separate from the Task 11 SQL-only users (which stay for RPC-level SQL testing); both sets are synthetic, clearly-labeled test data.
+
+Run `npm run dev`, sign in as the local test manager account. With the `weekly_schedule_import` flag row's `enabled = false` (the seeded default), confirm neither the `/admin` card nor navigating directly to `/schedule-import` shows the feature (route should still resolve — `AdminRoute` still permits access — but the page itself should reasonably handle a disabled flag; add a simple guard inside `ScheduleImportPage` that renders "התכונה אינה זמינה" when `!useFeatureFlag('weekly_schedule_import').enabled`, so a manager who bookmarks the URL doesn't reach a half-built wizard when the flag is off).
 
 Add this guard now:
 
@@ -2836,7 +2911,13 @@ if (!flag.enabled) {
 }
 ```
 
-Then flip `enabled = true` and add your own manager user id to `allowed_user_ids` on the preview branch (via `mcp__supabase__execute_sql`), reload, and confirm the card and full wizard now appear.
+Then flip the flag on the local stack and reload:
+
+```bash
+docker exec supabase_db_guardflow psql -U postgres -d postgres -c "update app_feature_flags set enabled = true where id = 'weekly_schedule_import'"
+```
+
+(Leaving `allowed_user_ids` empty means every authenticated user sees it once enabled, per `useFeatureFlag`'s logic — fine for local testing; scope it to specific ids if narrower testing is needed.) Confirm the card and full wizard now appear.
 
 - [ ] **Step 4: Commit**
 
@@ -3252,11 +3333,11 @@ Expected: no errors (warnings acceptable if pre-existing)
 
 - [ ] **Step 5: Re-run the RLS/RPC permission checks from Task 11 Step 3 one more time end-to-end**
 
-Confirm once more, against the preview branch: guard cannot call either RPC; commander can only call `replace_assignment_worker` within the current time window; manager can do everything; re-publishing an identical file is a true no-op.
+Confirm once more, against the local stack: guard cannot call either RPC; commander can only call `replace_assignment_worker` within the current time window; manager can do everything; re-publishing an identical file is a true no-op.
 
 - [ ] **Step 6: Manual full-flow verification**
 
-With the flag enabled for your test manager account on the preview branch: upload → preview → correct an unmatched name → publish → confirm `/shift-live` shows the dated view → perform a commander swap → confirm realtime update in a second browser session → re-upload the same file → confirm no duplicate rows and the manual swap survives.
+With the flag enabled for your test manager account on the local stack: upload → preview → correct an unmatched name → publish → confirm `/shift-live` shows the dated view → perform a commander swap → confirm realtime update in a second browser session → re-upload the same file → confirm no duplicate rows and the manual swap survives.
 
 - [ ] **Step 7: Regression check with the flag off**
 
