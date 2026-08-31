@@ -82,6 +82,7 @@ export async function createScheduleImport(input: {
   storage_path: string
   original_filename: string
   content_hash: string
+  created_by: string
 }): Promise<ScheduleImportRow> {
   const { data, error } = await supabase
     .from('schedule_imports')

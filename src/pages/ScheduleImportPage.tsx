@@ -15,6 +15,7 @@ import {
 } from '../lib/scheduleImports'
 import { useProfiles } from '../hooks/useProfiles'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
+import { useAuth } from '../contexts/AuthContext'
 
 type WizardStep = 'upload' | 'processing' | 'preview' | 'error'
 
@@ -31,6 +32,7 @@ function getPreviousSunday(date: Date): Date {
 
 export function ScheduleImportPage() {
   const flag = useFeatureFlag('weekly_schedule_import')
+  const { user } = useAuth()
 
   const [step, setStep] = useState<WizardStep>('upload')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -58,6 +60,12 @@ export function ScheduleImportPage() {
     }
     if (profilesQuery.isError) {
       setErrorMessage('טעינת רשימת העובדים נכשלה. נסה לרענן את הדף.')
+      setStep('error')
+      return
+    }
+
+    if (!user) {
+      setErrorMessage('יש להתחבר מחדש כדי להעלות קובץ.')
       setStep('error')
       return
     }
@@ -102,6 +110,7 @@ export function ScheduleImportPage() {
         storage_path: '', // placeholder until the upload below completes and this row is updated
         original_filename: file.name,
         content_hash: contentHash,
+        created_by: user.id,
       })
 
       const { storagePath } = await uploadScheduleFile(file, weekStartIso, scheduleImport.id)
