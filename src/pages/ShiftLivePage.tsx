@@ -6,7 +6,7 @@ import GuardCard from '../components/ui/GuardCard'
 import { NotificationBell } from '../components/ui/NotificationBell'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, type ShiftCategory } from '../constants/shifts'
-import { toLocalDateIso } from '../lib/israelTime'
+import { toLocalDateIso, addDaysIso } from '../lib/israelTime'
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
@@ -20,7 +20,14 @@ import { AssignmentSwapModal } from '../components/AssignmentSwapModal'
 type DatedAssignmentContext = {
   scheduleImportEnabled: boolean
   assignmentsQuery: ReturnType<typeof useShiftAssignmentsForWeek>
-  todayIso: string
+  // The work_date to match the active assignment against — NOT necessarily
+  // calendar-today. A night shift's work_date is the date it *started* (see
+  // normalizeSchedule.ts), even though it's still active into the next
+  // calendar day. Between local midnight and the night category's end hour,
+  // calendar-today has already advanced while the active assignment is still
+  // filed under yesterday's date, so this is resolved below to yesterday in
+  // that window. See lookupWorkDate in ShiftLivePage().
+  lookupWorkDate: string
   // shift_category is part of shift_assignments' real uniqueness key
   // (work_date, shift_category, position, slot_index) — the same position can
   // have a different assignment per category on the same date, so matching
@@ -57,6 +64,16 @@ export function ShiftLivePage() {
   // this app runs on devices physically in Israel, so local time is Israel
   // time.
   const todayIso = toLocalDateIso(now)
+  // The active night assignment's work_date is still "yesterday" (per
+  // normalizeSchedule.ts's convention — work_date is the shift's start date)
+  // during the window between local midnight and the night category's end
+  // hour, even though todayIso has already rolled over. Resolve the correct
+  // work_date to look up for whichever assignment is actually active right
+  // now, rather than blindly using calendar-today.
+  const lookupWorkDate =
+    category === 'night' && now.getHours() < SHIFT_CATEGORIES.night.endHour
+      ? addDaysIso(todayIso, -1)
+      : todayIso
   const weekStartIso = (() => {
     const d = new Date(now)
     d.setDate(d.getDate() - d.getDay())
@@ -79,7 +96,7 @@ export function ShiftLivePage() {
   const datedCtx: DatedAssignmentContext = {
     scheduleImportEnabled: scheduleImportFlag.enabled,
     assignmentsQuery,
-    todayIso,
+    lookupWorkDate,
     category,
     canSwap,
     onSwapClick: setSwapAssignmentId,
@@ -266,7 +283,7 @@ function datedOrLegacyName({
   position,
   scheduleImportEnabled,
   assignmentsQuery,
-  todayIso,
+  lookupWorkDate,
   category,
   canSwap,
   onSwapClick,
@@ -282,7 +299,7 @@ function datedOrLegacyName({
   // Omitting this let the wrong shift's assignment be shown (and the swap
   // modal act on the wrong assignment id).
   const dated = assignmentsQuery.data?.find(
-    (a) => a.work_date === todayIso && a.position === position && a.shift_category === category && a.published,
+    (a) => a.work_date === lookupWorkDate && a.position === position && a.shift_category === category && a.published,
   )
 
   if (!dated) return legacyName

@@ -181,10 +181,20 @@ export async function fetchShiftAssignmentsForWeek(weekStart: string): Promise<S
   const weekEnd = new Date(weekStart)
   weekEnd.setUTCDate(weekEnd.getUTCDate() + 6)
 
+  // Pad the start by one calendar day: a night shift's work_date is the date
+  // it *started* (normalizeSchedule.ts), so the assignment still active in
+  // the early hours of weekStart's own calendar day (00:00-07:00 Israel
+  // time) is filed under the day *before* weekStart — one day outside the
+  // nominal week. ShiftLivePage's active-assignment lookup needs that row
+  // available when weekStart is "today" and it's currently just after
+  // midnight during an ongoing night shift that began the day before.
+  const paddedStart = new Date(weekStart)
+  paddedStart.setUTCDate(paddedStart.getUTCDate() - 1)
+
   const { data, error } = await supabase
     .from('shift_assignments')
     .select('*')
-    .gte('work_date', weekStart)
+    .gte('work_date', paddedStart.toISOString().slice(0, 10))
     .lte('work_date', weekEnd.toISOString().slice(0, 10))
 
   if (error) {
