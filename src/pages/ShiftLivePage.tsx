@@ -5,7 +5,8 @@ import { useActiveBoard } from '../hooks/useActiveBoard'
 import GuardCard from '../components/ui/GuardCard'
 import { NotificationBell } from '../components/ui/NotificationBell'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
-import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel } from '../constants/shifts'
+import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, type ShiftCategory } from '../constants/shifts'
+import { toLocalDateIso } from '../lib/israelTime'
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
@@ -20,6 +21,11 @@ type DatedAssignmentContext = {
   scheduleImportEnabled: boolean
   assignmentsQuery: ReturnType<typeof useShiftAssignmentsForWeek>
   todayIso: string
+  // shift_category is part of shift_assignments' real uniqueness key
+  // (work_date, shift_category, position, slot_index) — the same position can
+  // have a different assignment per category on the same date, so matching
+  // must be scoped to the board's own active category, not just date+position.
+  category: ShiftCategory
   canSwap: boolean
   onSwapClick: (assignmentId: string) => void
 }
@@ -43,11 +49,18 @@ export function ShiftLivePage() {
   const cols: string[] = board?.cols ?? []
 
   const scheduleImportFlag = useFeatureFlag('weekly_schedule_import')
-  const todayIso = now.toISOString().slice(0, 10)
+  // Local calendar date, not UTC — using toISOString() here computed the UTC
+  // date, which is wrong for ~3 hours after Israel midnight (Israel is
+  // UTC+2/+3), showing night-shift crews the wrong day's assignments during
+  // exactly the hours the night shift is live. Consistent with useClock.ts /
+  // shiftBlocks.ts, which already read local (not UTC) time throughout —
+  // this app runs on devices physically in Israel, so local time is Israel
+  // time.
+  const todayIso = toLocalDateIso(now)
   const weekStartIso = (() => {
     const d = new Date(now)
-    d.setUTCDate(d.getUTCDate() - d.getUTCDay())
-    return d.toISOString().slice(0, 10)
+    d.setDate(d.getDate() - d.getDay())
+    return toLocalDateIso(d)
   })()
   const assignmentsQuery = useShiftAssignmentsForWeek(scheduleImportFlag.enabled ? weekStartIso : '')
   const { isAdmin, isCommander } = useAuth()
@@ -67,6 +80,7 @@ export function ShiftLivePage() {
     scheduleImportEnabled: scheduleImportFlag.enabled,
     assignmentsQuery,
     todayIso,
+    category,
     canSwap,
     onSwapClick: setSwapAssignmentId,
   }
@@ -253,6 +267,7 @@ function datedOrLegacyName({
   scheduleImportEnabled,
   assignmentsQuery,
   todayIso,
+  category,
   canSwap,
   onSwapClick,
 }: {
@@ -261,8 +276,13 @@ function datedOrLegacyName({
 } & DatedAssignmentContext): ReactNode {
   if (!scheduleImportEnabled) return legacyName
 
+  // shift_category must be part of the match — the table's real uniqueness
+  // key is (work_date, shift_category, position, slot_index), so the same
+  // position can have a different assignment per category on the same date.
+  // Omitting this let the wrong shift's assignment be shown (and the swap
+  // modal act on the wrong assignment id).
   const dated = assignmentsQuery.data?.find(
-    (a) => a.work_date === todayIso && a.position === position && a.published,
+    (a) => a.work_date === todayIso && a.position === position && a.shift_category === category && a.published,
   )
 
   if (!dated) return legacyName
