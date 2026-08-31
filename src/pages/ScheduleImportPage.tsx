@@ -5,7 +5,14 @@ import { normalizeSchedule } from '../lib/scheduleImport/normalizeSchedule'
 import { matchNames } from '../lib/scheduleImport/matchNames'
 import { validateSchedule, type ExistingAssignmentSummary } from '../lib/scheduleImport/validateSchedule'
 import type { MatchedAssignment, ValidationWarning } from '../lib/scheduleImport/types'
-import { computeContentHash, createScheduleImport, uploadScheduleFile, updateScheduleImportStoragePath, fetchShiftAssignmentsForWeek } from '../lib/scheduleImports'
+import {
+  computeContentHash,
+  createScheduleImport,
+  uploadScheduleFile,
+  updateScheduleImportStoragePath,
+  fetchShiftAssignmentsForWeek,
+  callPublishScheduleImport,
+} from '../lib/scheduleImports'
 import { useProfiles } from '../hooks/useProfiles'
 
 type WizardStep = 'upload' | 'processing' | 'preview' | 'error'
@@ -141,13 +148,161 @@ export function ScheduleImportPage() {
   )
 }
 
-// Placeholder signature — implemented in Task 17.
-function SchedulePreview(props: {
+function SchedulePreview({
+  importId,
+  assignments: initialAssignments,
+  warnings,
+  stats,
+  onCancel,
+}: {
   importId: string
   assignments: MatchedAssignment[]
   warnings: ValidationWarning[]
   stats: { imported: number; skipped: number; unmatched_names: number }
   onCancel: () => void
 }) {
-  return <div dir="rtl">Preview placeholder — implemented in Task 17 ({props.assignments.length} assignments, {props.stats.imported} imported)</div>
+  const [assignments, setAssignments] = useState(initialAssignments)
+  const [publishing, setPublishing] = useState(false)
+  const [publishError, setPublishError] = useState<string | null>(null)
+  const [published, setPublished] = useState(false)
+  const profilesQuery = useProfiles()
+
+  function removeRow(index: number) {
+    setAssignments((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  function assignExistingProfile(index: number, userId: string, name: string) {
+    setAssignments((prev) =>
+      prev.map((a, i) => (i === index ? { ...a, planned_user_id: userId, source_name: name, match_confidence: 'exact' as const } : a)),
+    )
+  }
+
+  function editName(index: number, name: string) {
+    setAssignments((prev) => prev.map((a, i) => (i === index ? { ...a, source_name: name } : a)))
+  }
+
+  async function handlePublish() {
+    setPublishing(true)
+    setPublishError(null)
+    try {
+      await callPublishScheduleImport({
+        importId,
+        assignments,
+        resolutions: {},
+        dryRun: false,
+      })
+      setPublished(true)
+    } catch (error) {
+      setPublishError(getReadableError(error))
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  if (published) {
+    return (
+      <div dir="rtl" className="p-4">
+        <p className="text-green-700 font-bold">הסידור פורסם בהצלחה.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div dir="rtl" className="p-4">
+      <h1 className="text-xl font-bold mb-2">תצוגה מקדימה</h1>
+      <p className="mb-4">
+        ייקלטו: {stats.imported} · דולגו: {stats.skipped} · שמות שלא זוהו: {stats.unmatched_names}
+      </p>
+
+      {warnings.length > 0 && (
+        <ul className="bg-yellow-50 text-yellow-900 p-3 rounded mb-4">
+          {warnings.map((w, i) => (
+            <li key={i}>{w.message}</li>
+          ))}
+        </ul>
+      )}
+
+      <table className="w-full text-right mb-4">
+        <thead>
+          <tr>
+            <th>תאריך</th>
+            <th>משמרת</th>
+            <th>תפקיד</th>
+            <th>עמדה</th>
+            <th>שעות</th>
+            <th>שם</th>
+            <th>התאמה</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {assignments.map((a, i) => (
+            <tr key={i}>
+              <td>{a.work_date}</td>
+              <td>{a.shift_category}</td>
+              <td>{a.worker_kind}</td>
+              <td>{a.position}</td>
+              <td>
+                {new Date(a.starts_at).toISOString().slice(11, 16)}–{new Date(a.ends_at).toISOString().slice(11, 16)}
+              </td>
+              <td>
+                <input
+                  value={a.source_name ?? ''}
+                  onChange={(e) => editName(i, e.target.value)}
+                  className="border rounded px-1"
+                />
+              </td>
+              <td>
+                {a.match_confidence === 'exact' && '✓'}
+                {a.match_confidence === 'fuzzy' && (
+                  <select onChange={(e) => assignExistingProfile(i, e.target.value, a.source_name ?? '')} defaultValue="">
+                    <option value="" disabled>
+                      אישור התאמה
+                    </option>
+                    {(profilesQuery.data ?? []).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {a.match_confidence === 'none' && (
+                  <select onChange={(e) => assignExistingProfile(i, e.target.value, a.source_name ?? '')} defaultValue="">
+                    <option value="" disabled>
+                      בחר עובד קיים
+                    </option>
+                    {(profilesQuery.data ?? []).map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </td>
+              <td>
+                <button type="button" onClick={() => removeRow(i)}>
+                  הסר
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {publishError && (
+        <div className="bg-red-100 text-red-800 p-3 rounded mb-4" role="alert">
+          {publishError}
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button type="button" onClick={onCancel} disabled={publishing}>
+          ביטול
+        </button>
+        <button type="button" onClick={handlePublish} disabled={publishing}>
+          {publishing ? 'מפרסם…' : 'פרסם'}
+        </button>
+      </div>
+    </div>
+  )
 }
