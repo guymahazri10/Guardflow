@@ -10,9 +10,12 @@ export function useShiftAssignmentsForWeek(weekStart: string) {
   const query = useQuery({
     queryKey,
     queryFn: () => fetchShiftAssignmentsForWeek(weekStart),
+    enabled: !!weekStart,
   })
 
   useEffect(() => {
+    if (!weekStart) return
+
     const channel = supabase
       .channel(`shift-assignments-${weekStart}`)
       .on(

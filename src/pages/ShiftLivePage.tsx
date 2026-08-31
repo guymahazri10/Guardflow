@@ -8,6 +8,16 @@ import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel } from '../cons
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
+import { useFeatureFlag } from '../hooks/useFeatureFlag'
+import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
+
+/** Shared "dated assignment vs legacy roster name" state, threaded from the
+ *  page root down into NowTab/AllShiftTab so both tabs share one query. */
+type DatedAssignmentContext = {
+  scheduleImportEnabled: boolean
+  assignmentsQuery: ReturnType<typeof useShiftAssignmentsForWeek>
+  todayIso: string
+}
 
 type Tab = 'now' | 'all'
 
@@ -26,6 +36,20 @@ export function ShiftLivePage() {
   const isNight = category === 'night'
   const currentBlock = board ? getCurrentBlock(board.rows ?? [], now, isNight) : null
   const cols: string[] = board?.cols ?? []
+
+  const scheduleImportFlag = useFeatureFlag('weekly_schedule_import')
+  const todayIso = now.toISOString().slice(0, 10)
+  const weekStartIso = (() => {
+    const d = new Date(now)
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay())
+    return d.toISOString().slice(0, 10)
+  })()
+  const assignmentsQuery = useShiftAssignmentsForWeek(scheduleImportFlag.enabled ? weekStartIso : '')
+  const datedCtx: DatedAssignmentContext = {
+    scheduleImportEnabled: scheduleImportFlag.enabled,
+    assignmentsQuery,
+    todayIso,
+  }
 
   return (
     <div className="flex flex-col flex-1 gap-0 max-w-mobile mx-auto w-full">
@@ -70,9 +94,9 @@ export function ShiftLivePage() {
         ) : !board ? (
           <EmptyState categoryLabel={catConfig.label} hours={catConfig.hours} />
         ) : tab === 'now' ? (
-          <NowTab board={board} cols={cols} currentBlock={currentBlock} />
+          <NowTab board={board} cols={cols} currentBlock={currentBlock} datedCtx={datedCtx} />
         ) : (
-          <AllShiftTab board={board} cols={cols} currentBlock={currentBlock} />
+          <AllShiftTab board={board} cols={cols} currentBlock={currentBlock} datedCtx={datedCtx} />
         )}
       </div>
     </div>
@@ -85,10 +109,12 @@ function NowTab({
   board,
   cols,
   currentBlock,
+  datedCtx,
 }: {
   board: RosterBoard
   cols: string[]
   currentBlock: RosterBoardRow | null
+  datedCtx: DatedAssignmentContext
 }) {
   if (!currentBlock) {
     return <Placeholder icon={<ClockIcon />} text="אין בלוק זמן פעיל כרגע" />
@@ -109,7 +135,11 @@ function NowTab({
           <GuardCard
             key={role}
             role={role}
-            guardName={board.guard_names?.[role]?.name ?? null}
+            guardName={datedOrLegacyName({
+              legacyName: board.guard_names?.[role]?.name ?? null,
+              position: role,
+              ...datedCtx,
+            })}
             task={currentBlock.cells?.[role]}
           />
         ))}
@@ -126,10 +156,12 @@ function AllShiftTab({
   board,
   cols,
   currentBlock,
+  datedCtx,
 }: {
   board: RosterBoard
   cols: string[]
   currentBlock: RosterBoardRow | null
+  datedCtx: DatedAssignmentContext
 }) {
   const allRows: RosterBoardRow[] = board.rows ?? []
   const currentIndex = currentBlock ? allRows.findIndex((row) => row.time === currentBlock.time) : -1
@@ -162,7 +194,11 @@ function AllShiftTab({
                 <GuardCard
                   key={role}
                   role={role}
-                  guardName={board.guard_names?.[role]?.name ?? null}
+                  guardName={datedOrLegacyName({
+                    legacyName: board.guard_names?.[role]?.name ?? null,
+                    position: role,
+                    ...datedCtx,
+                  })}
                   task={row.cells?.[role]}
                   dim={!isCurrent}
                 />
@@ -171,6 +207,43 @@ function AllShiftTab({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/* ─── Dated-assignment overlay ───────────────────────────────────
+ * When the weekly_schedule_import flag is on and a published dated
+ * shift_assignments row exists for today/this position, show it
+ * ("תוכנן:"/"בפועל:") instead of the legacy roster_boards.guard_names
+ * value. Otherwise (flag off, or no matching row) this returns the
+ * legacy value completely unchanged, so GuardCard's rendering — including
+ * its "לא הוגדר" fallback for an unassigned role — stays byte-for-byte
+ * identical to before this feature existed. */
+function datedOrLegacyName({
+  legacyName,
+  position,
+  scheduleImportEnabled,
+  assignmentsQuery,
+  todayIso,
+}: {
+  legacyName: string | null
+  position: string
+} & DatedAssignmentContext): ReactNode {
+  if (!scheduleImportEnabled) return legacyName
+
+  const dated = assignmentsQuery.data?.find(
+    (a) => a.work_date === todayIso && a.position === position && a.published,
+  )
+
+  if (!dated) return legacyName
+
+  const plannedLabel = dated.source_name ?? '—'
+  const actualLabel = dated.actual_name ?? plannedLabel
+
+  return (
+    <div>
+      <div>תוכנן: {plannedLabel}</div>
+      {dated.is_manually_edited && <div>בפועל: {actualLabel}</div>}
     </div>
   )
 }

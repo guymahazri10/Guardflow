@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react'
 import { getPositionBadgeStyle } from '../../constants/colors'
 
 interface GuardCardProps {
   role: string
-  guardName: string | null
+  guardName: ReactNode
   task?: string
   dim?: boolean
 }
