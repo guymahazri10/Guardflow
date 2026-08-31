@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient, type User } from 'https://esm.sh/@supabase/supabase-js@2.49.4'
-import * as pdfjsLib from 'https://esm.sh/pdfjs-dist@4.0.379/legacy/build/pdf.mjs'
+import { extractTextItems, getDocumentProxy } from 'npm:unpdf@1.8.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -59,7 +59,9 @@ async function requireManager(req: Request): Promise<ManagerCheckResult> {
   return { ok: true, caller, adminClient }
 }
 
-type TextItem = { str: string; transform: number[] }
+const MIN_TEXT_ITEMS_FOR_SUPPORTED = 4
+
+type TextItem = { str: string; x: number; y: number }
 
 /**
  * Groups extracted PDF text items into rows by their y-coordinate (rounded
@@ -69,18 +71,24 @@ type TextItem = { str: string; transform: number[] }
  * since Deno edge functions cannot import from src/. The allowlist/matching/
  * validation logic is NOT duplicated here; it stays client-side and runs on
  * the grid this function returns.
+ *
+ * unpdf's `extractTextItems()` already resolves each item's x/y from
+ * pdf.js's raw `transform` matrix (x = transform[4], y = transform[5], PDF
+ * coordinate space with origin at bottom-left) — same values the client-side
+ * parser reads directly off `transform`, just pre-extracted into named
+ * fields, so this clustering logic is unchanged from the pdfjs-dist version.
  */
 function clusterIntoGrid(items: TextItem[]) {
   const rowsByY = new Map<number, TextItem[]>()
   for (const item of items) {
-    const y = Math.round(item.transform[5] / 5) * 5
+    const y = Math.round(item.y / 5) * 5
     const bucket = rowsByY.get(y) ?? []
     bucket.push(item)
     rowsByY.set(y, bucket)
   }
   const sortedYs = Array.from(rowsByY.keys()).sort((a, b) => b - a)
   return sortedYs.map((y) => {
-    const rowItems = rowsByY.get(y)!.sort((a, b) => a.transform[4] - b.transform[4])
+    const rowItems = rowsByY.get(y)!.sort((a, b) => a.x - b.x)
     return rowItems.map((item) => ({ text: item.str.trim(), entries: [item.str.trim()] }))
   })
 }
@@ -119,19 +127,17 @@ Deno.serve(async (req) => {
 
   const bytes = new Uint8Array(await fileData.arrayBuffer())
 
-  const loadingTask = pdfjsLib.getDocument({ data: bytes })
-  const pdf = await loadingTask.promise
-  const allItems: TextItem[] = []
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum)
-    const textContent = await page.getTextContent()
-    for (const item of textContent.items as TextItem[]) {
-      if (item.str && item.str.trim()) allItems.push(item)
-    }
-  }
+  const pdf = await getDocumentProxy(bytes)
+  const { items: itemsByPage } = await extractTextItems(pdf)
+  const allItems: TextItem[] = itemsByPage
+    .flat()
+    .filter((item: TextItem) => item.str && item.str.trim())
 
-  if (allItems.length < 4) {
-    return jsonResponse({ supported: false, reason: 'קובץ PDF סרוק — לא נתמך בשלב זה.' }, 200)
+  if (allItems.length < MIN_TEXT_ITEMS_FOR_SUPPORTED) {
+    return jsonResponse(
+      { supported: false, reason: 'קובץ PDF סרוק — לא נתמך בשלב זה. יש להעלות כקובץ Excel.' },
+      200,
+    )
   }
 
   const grid = clusterIntoGrid(allItems)
