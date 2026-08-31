@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useClock, formatHHMM } from '../hooks/useClock'
 import { useActiveBoard } from '../hooks/useActiveBoard'
 import GuardCard from '../components/ui/GuardCard'
@@ -52,6 +53,16 @@ export function ShiftLivePage() {
   const { isAdmin, isCommander } = useAuth()
   const canSwap = isAdmin || isCommander
   const [swapAssignmentId, setSwapAssignmentId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  // Realtime (Task 14's postgres_changes subscription) is the primary refresh
+  // path for other open sessions, but the acting user's own screen shouldn't
+  // depend on Realtime's health to see their own just-saved change — so also
+  // invalidate the same query key directly on save. Must match the exact key
+  // shape useShiftAssignmentsForWeek builds internally: ['shift-assignments', weekStart].
+  function handleSwapSaved() {
+    setSwapAssignmentId(null)
+    queryClient.invalidateQueries({ queryKey: ['shift-assignments', weekStartIso] })
+  }
   const datedCtx: DatedAssignmentContext = {
     scheduleImportEnabled: scheduleImportFlag.enabled,
     assignmentsQuery,
@@ -113,7 +124,7 @@ export function ShiftLivePage() {
         <AssignmentSwapModal
           assignmentId={swapAssignmentId}
           onClose={() => setSwapAssignmentId(null)}
-          onSaved={() => setSwapAssignmentId(null)}
+          onSaved={handleSwapSaved}
         />
       )}
     </div>
