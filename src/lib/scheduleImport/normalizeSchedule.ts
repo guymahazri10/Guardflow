@@ -4,6 +4,7 @@
 // (אחמ"ש / מאבטח / excluded labels) start a block; subsequent column-0
 // cells are position labels; other cells are "HH:MM-HH:MM name" lines.
 import type { NormalizedAssignment, RawGrid, ShiftCategory, WorkerKind } from './types'
+import { israelLocalToUtcIso } from '../israelTime'
 
 const WORKER_KIND_LABELS: Record<string, WorkerKind> = {
   'אחמ"ש': 'אחמ"ש',
@@ -47,7 +48,40 @@ function isSectionRow(row: { text: string }[]): boolean {
   return classifySection(first).kind !== 'unknown' && row.slice(1).every((c) => c.text.trim() === '')
 }
 
+// A header cell like "ראשון 06/09" carries both the day-of-week name and the
+// file's own DD/MM date. The numeric date is authoritative when present —
+// it's what actually tells us which real week the file describes, whereas
+// the day-of-week name only tells us an offset from whatever `weekStart` the
+// caller happened to pass in (see Important #4: the caller no longer has to
+// know the real week in advance).
+const HEADER_DATE_PATTERN = /(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?/
+
 function parseHeaderDate(rawHeader: string, weekStart: Date): Date | null {
+  const dateMatch = HEADER_DATE_PATTERN.exec(rawHeader)
+  if (dateMatch) {
+    const day = Number(dateMatch[1])
+    const month = Number(dateMatch[2])
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      let year: number
+      if (dateMatch[3]) {
+        year = Number(dateMatch[3])
+        if (year < 100) year += 2000
+      } else {
+        // No year in the header — anchor to whichever nearby year puts this
+        // date closest to weekStart (handles a week crossing Dec 31 → Jan 1).
+        const base = weekStart.getUTCFullYear()
+        let best: { year: number; diff: number } | null = null
+        for (const candidateYear of [base - 1, base, base + 1]) {
+          const candidate = Date.UTC(candidateYear, month - 1, day)
+          const diff = Math.abs(candidate - weekStart.getTime())
+          if (!best || diff < best.diff) best = { year: candidateYear, diff }
+        }
+        year = best!.year
+      }
+      return new Date(Date.UTC(year, month - 1, day))
+    }
+  }
+
   const dayIndex = HEBREW_DAY_NAMES.findIndex((name) => rawHeader.includes(name))
   if (dayIndex === -1) return null
   const date = new Date(weekStart)
@@ -61,10 +95,15 @@ function classifyCategory(startHour: number): ShiftCategory {
   return 'night'
 }
 
+// `date`'s UTC Y/M/D components represent the intended Israel calendar date
+// (see parseHeaderDate — it's built from weekStart via setUTCDate, so its
+// UTC fields are the calendar date, not an instant to be reused directly).
+// `hour`/`minute` are read straight from the cell's "HH:MM-HH:MM" text and
+// are always meant as Israel local time (GuardFlow is Israel-only) — so they
+// must be converted through the real Asia/Jerusalem UTC offset (DST-aware),
+// not stamped on as if they were already UTC.
 function toIso(date: Date, hour: number, minute: number): string {
-  const d = new Date(date)
-  d.setUTCHours(hour, minute, 0, 0)
-  return d.toISOString()
+  return israelLocalToUtcIso(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), hour, minute)
 }
 
 function cleanName(raw: string): string {

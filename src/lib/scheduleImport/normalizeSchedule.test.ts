@@ -26,8 +26,10 @@ describe('normalizeSchedule', () => {
       slot_index: 0,
       source_name: 'בדיקה־א׳',
     })
-    expect(assignments[0].starts_at).toBe('2026-09-06T06:00:00.000Z')
-    expect(assignments[0].ends_at).toBe('2026-09-06T14:00:00.000Z')
+    // 06:00-14:00 is Israel local time; Sept 6 2026 is within Israel DST
+    // (UTC+3), so the correct UTC instants are 3 hours earlier.
+    expect(assignments[0].starts_at).toBe('2026-09-06T03:00:00.000Z')
+    expect(assignments[0].ends_at).toBe('2026-09-06T11:00:00.000Z')
   })
 
   it('drops excluded sections entirely — not in output, no trace', () => {
@@ -87,8 +89,10 @@ describe('normalizeSchedule', () => {
       ],
     }
     const { assignments } = normalizeSchedule(grid, weekStart)
-    expect(assignments[0].starts_at).toBe('2026-09-06T09:30:00.000Z')
-    expect(assignments[0].ends_at).toBe('2026-09-06T12:15:00.000Z')
+    // 09:30-12:15 Israel local time, converted through the Sept-2026 DST
+    // (UTC+3) offset.
+    expect(assignments[0].starts_at).toBe('2026-09-06T06:30:00.000Z')
+    expect(assignments[0].ends_at).toBe('2026-09-06T09:15:00.000Z')
   })
 
   it('rolls ends_at to the next day for a night shift crossing midnight', () => {
@@ -100,8 +104,11 @@ describe('normalizeSchedule', () => {
       ],
     }
     const { assignments } = normalizeSchedule(grid, weekStart)
-    expect(assignments[0].starts_at).toBe('2026-09-06T23:00:00.000Z')
-    expect(assignments[0].ends_at).toBe('2026-09-07T07:00:00.000Z')
+    // 23:00-07:00 Israel local time, converted through the Sept-2026 DST
+    // (UTC+3) offset — still lands on work_date's UTC calendar day for
+    // starts_at (20:00Z), and rolls to the next UTC day for ends_at (04:00Z).
+    expect(assignments[0].starts_at).toBe('2026-09-06T20:00:00.000Z')
+    expect(assignments[0].ends_at).toBe('2026-09-07T04:00:00.000Z')
     expect(assignments[0].shift_category).toBe('night')
   })
 
