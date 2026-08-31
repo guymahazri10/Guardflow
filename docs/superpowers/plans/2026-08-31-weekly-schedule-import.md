@@ -1926,7 +1926,7 @@ git commit -m "Add private schedule-imports storage bucket with manager-only RLS
 
 **Interfaces:**
 - Consumes: `supabase` client from `src/lib/supabase.ts` (existing)
-- Produces: `fetchFeatureFlag(id: string): Promise<{ enabled: boolean; allowed_user_ids: string[] } | null>`, `uploadScheduleFile(file: File, weekStart: string, contentHash: string): Promise<{ storagePath: string }>`, `createScheduleImport(input): Promise<ScheduleImportRow>`, `callPublishScheduleImport(input): Promise<PublishResult>`, `callReplaceAssignmentWorker(input): Promise<ShiftAssignment>`, `fetchShiftAssignmentsForWeek(weekStart: string): Promise<ShiftAssignment[]>`
+- Produces: `fetchFeatureFlag(id: string): Promise<{ enabled: boolean; allowed_user_ids: string[] } | null>`, `uploadScheduleFile(file: File, weekStart: string, contentHash: string): Promise<{ storagePath: string }>`, `createScheduleImport(input): Promise<ScheduleImportRow>`, `updateScheduleImportStoragePath(importId: string, storagePath: string): Promise<void>`, `callPublishScheduleImport(input): Promise<PublishResult>`, `callReplaceAssignmentWorker(input): Promise<ShiftAssignment>`, `fetchShiftAssignmentsForWeek(weekStart: string): Promise<ShiftAssignment[]>`
 
 - [ ] **Step 1: Implement `featureFlags.ts`, following the existing `rosterBoards.ts` error-message convention**
 
@@ -2059,6 +2059,20 @@ export async function createScheduleImport(input: {
   }
 
   return data as ScheduleImportRow
+}
+
+export async function updateScheduleImportStoragePath(
+  importId: string,
+  storagePath: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('schedule_imports')
+    .update({ storage_path: storagePath })
+    .eq('id', importId)
+
+  if (error) {
+    throw new Error(getErrorMessage('Failed to record schedule import storage path', error))
+  }
 }
 
 export async function callPublishScheduleImport(input: {
@@ -2413,7 +2427,7 @@ import { normalizeSchedule } from '../lib/scheduleImport/normalizeSchedule'
 import { matchNames } from '../lib/scheduleImport/matchNames'
 import { validateSchedule, type ExistingAssignmentSummary } from '../lib/scheduleImport/validateSchedule'
 import type { MatchedAssignment, ValidationWarning } from '../lib/scheduleImport/types'
-import { computeContentHash, createScheduleImport, uploadScheduleFile, fetchShiftAssignmentsForWeek } from '../lib/scheduleImports'
+import { computeContentHash, createScheduleImport, uploadScheduleFile, updateScheduleImportStoragePath, fetchShiftAssignmentsForWeek } from '../lib/scheduleImports'
 import { useProfiles } from '../hooks/useProfiles'
 
 type WizardStep = 'upload' | 'processing' | 'preview' | 'error'
@@ -2477,13 +2491,13 @@ export function ScheduleImportPage() {
       const scheduleImport = await createScheduleImport({
         week_start: weekStartIso,
         source_kind: 'excel',
-        storage_path: '', // filled in after upload below
+        storage_path: '', // placeholder until the upload below completes and this row is updated
         original_filename: file.name,
         content_hash: contentHash,
       })
 
       const { storagePath } = await uploadScheduleFile(file, weekStartIso, scheduleImport.id)
-      void storagePath // storage_path is set on the import row by a follow-up update in Task 17's publish flow
+      await updateScheduleImportStoragePath(scheduleImport.id, storagePath)
 
       setImportId(scheduleImport.id)
       setAssignments(validated.assignments)
