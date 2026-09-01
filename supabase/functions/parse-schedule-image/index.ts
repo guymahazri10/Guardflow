@@ -59,7 +59,15 @@ async function requireManager(req: Request): Promise<ManagerCheckResult> {
   return { ok: true, caller, adminClient }
 }
 
-const GEMINI_MODEL = 'gemini-2.0-flash'
+// Pinned to a specific model id rather than an alias like "gemini-flash-
+// latest": that alias 503'd repeatedly in manual testing while the pinned
+// id responded normally, and a pinned id fails predictably (loud 404) if
+// Google retires it, rather than silently drifting behavior. Verified
+// directly against the Gemini API on 2026-09-01 — "gemini-2.0-flash" (the
+// model this function originally shipped with) no longer exists, and
+// "gemini-2.5-flash" now 404s with "no longer available to new users" for
+// this API key. Revisit this constant if requests start failing again.
+const GEMINI_MODEL = 'gemini-3.6-flash'
 
 // Kept in close sync with the section/entry conventions
 // src/lib/scheduleImport/normalizeSchedule.ts expects: row[0] is the label
@@ -184,6 +192,7 @@ Deno.serve(async (req) => {
   try {
     result = await callGemini(apiKey, imageBase64, mimeType)
   } catch (error) {
+    console.error('parse-schedule-image: Gemini call failed:', error instanceof Error ? error.message : error)
     return jsonResponse(
       { supported: false, reason: 'קריאת התמונה נכשלה. נסה שוב, או השתמש בקובץ Excel אם זמין.' },
       200,
