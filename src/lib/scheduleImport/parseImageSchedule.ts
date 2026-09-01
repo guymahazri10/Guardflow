@@ -10,13 +10,28 @@ import type { ParseResult, RawCell, RawGrid, ValidationWarning } from './types'
  * docs/superpowers/specs/2026-09-01-image-schedule-import-design.md.
  */
 
-const ROW_BAND_TOLERANCE = 20 // px; wider than PDF's 5-unit bucket — screenshot
-// text has more font-metric jitter than a PDF's precise glyph positions.
-// Untuned against a real screenshot; revisit once more samples are available.
-const COLUMN_BAND_TOLERANCE = 40
 const LOW_CONFIDENCE_THRESHOLD = 60 // tesseract.js confidence is 0-100
 
-type OcrWord = {
+// Row/column clustering tolerances scale with the OCR'd word sizes rather
+// than using fixed pixel constants, so the same code works whether the
+// screenshot is a small phone capture or a huge desktop one. Calibrated
+// against a real screenshot of the user's actual source system
+// (mishmarot.co.il, 2752px wide): median word height ~17px, median word
+// width ~57px. Within one table cell, the "HH:MM-HH:MM" line and the name
+// line below it sit ~2.0x the median word height apart; different table
+// rows sit ~2.6x apart — ROW_HEIGHT_MULTIPLIER picks the midpoint of that
+// window so cell-internal lines merge but distinct rows don't. Column
+// centers sit ~300-400px apart in that real image while same-cell words
+// (e.g. a two-word name) sit at most ~66px apart — COLUMN_WIDTH_MULTIPLIER
+// is comfortably inside that gap. Still a heuristic, not a guarantee for
+// every possible screenshot layout/zoom level — revisit if a differently
+// laid out source system needs this.
+const ROW_HEIGHT_MULTIPLIER = 2.3
+const COLUMN_WIDTH_MULTIPLIER = 2.5
+const MIN_ROW_TOLERANCE = 10
+const MIN_COLUMN_TOLERANCE = 60
+
+export type OcrWord = {
   text: string
   confidence: number
   bbox: { x0: number; y0: number; x1: number; y1: number }
@@ -64,16 +79,26 @@ function xCenter(w: OcrWord): number {
  * text (order among those doesn't matter, since normalizeSchedule reads
  * each day's actual date from that column's own header cell).
  */
-function clusterWordsIntoGrid(words: OcrWord[]): { grid: RawGrid; warnings: ValidationWarning[] } {
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.floor(sorted.length / 2)]
+}
+
+export function clusterWordsIntoGrid(words: OcrWord[]): { grid: RawGrid; warnings: ValidationWarning[] } {
   const warnings: ValidationWarning[] = []
   if (words.length === 0) return { grid: { rows: [] }, warnings }
+
+  const medianHeight = median(words.map((w) => w.bbox.y1 - w.bbox.y0))
+  const medianWidth = median(words.map((w) => w.bbox.x1 - w.bbox.x0))
+  const rowTolerance = Math.max(MIN_ROW_TOLERANCE, medianHeight * ROW_HEIGHT_MULTIPLIER)
+  const columnTolerance = Math.max(MIN_COLUMN_TOLERANCE, medianWidth * COLUMN_WIDTH_MULTIPLIER)
 
   const sortedByY = [...words].sort((a, b) => yCenter(a) - yCenter(b))
   const rowBands: OcrWord[][] = []
   for (const word of sortedByY) {
     const lastBand = rowBands[rowBands.length - 1]
     const lastBandY = lastBand ? yCenter(lastBand[lastBand.length - 1]) : null
-    if (lastBand && lastBandY !== null && Math.abs(yCenter(word) - lastBandY) <= ROW_BAND_TOLERANCE) {
+    if (lastBand && lastBandY !== null && Math.abs(yCenter(word) - lastBandY) <= rowTolerance) {
       lastBand.push(word)
     } else {
       rowBands.push([word])
@@ -86,7 +111,7 @@ function clusterWordsIntoGrid(words: OcrWord[]): { grid: RawGrid; warnings: Vali
     for (const word of sortedByX) {
       const lastBand = columnBands[columnBands.length - 1]
       const lastBandX = lastBand ? xCenter(lastBand[lastBand.length - 1]) : null
-      if (lastBand && lastBandX !== null && Math.abs(xCenter(word) - lastBandX) <= COLUMN_BAND_TOLERANCE) {
+      if (lastBand && lastBandX !== null && Math.abs(xCenter(word) - lastBandX) <= columnTolerance) {
         lastBand.push(word)
       } else {
         columnBands.push([word])
@@ -98,7 +123,7 @@ function clusterWordsIntoGrid(words: OcrWord[]): { grid: RawGrid; warnings: Vali
       // stacked lines (e.g. "HH:MM-HH:MM" above a name) in reading order.
       const sorted = [...cellWords].sort((a, b) => {
         const dy = yCenter(a) - yCenter(b)
-        if (Math.abs(dy) > ROW_BAND_TOLERANCE / 2) return dy
+        if (Math.abs(dy) > rowTolerance / 2) return dy
         return xCenter(b) - xCenter(a)
       })
       const text = sorted.map((w) => w.text.trim()).join(' ')

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { parseImageSchedule } from './parseImageSchedule'
+import { parseImageSchedule, clusterWordsIntoGrid } from './parseImageSchedule'
 
 function word(text: string, x0: number, y0: number, confidence = 95) {
   return { text, confidence, bbox: { x0, y0, x1: x0 + 40, y1: y0 + 15 } }
@@ -150,5 +150,50 @@ describe('parseImageSchedule', () => {
     const { parseImageSchedule: freshParse } = await import('./parseImageSchedule')
     const result = await freshParse([new Uint8Array([0xff, 0xd8, 0xff])])
     expect(result.supported).toBe(false)
+  })
+})
+
+describe('clusterWordsIntoGrid — row/column tolerance calibration', () => {
+  // Regression test for a real bug: on an actual mishmarot.co.il screenshot,
+  // a table cell's "HH:MM-HH:MM" line and its name line beneath it sit
+  // ~2x the median word height apart, while two genuinely different table
+  // rows sit ~2.6-3x apart. A fixed 20px row tolerance split every cell's
+  // own two lines into separate (garbage) rows. Tolerances now scale with
+  // the OCR'd word height instead — this locks that calibration in.
+  it('merges a stacked time-line and name-line into one row (same cell)', () => {
+    const words = [
+      { text: '06:30-15:00', confidence: 95, bbox: { x0: 200, y0: 655, x1: 300, y1: 670 } }, // height 15
+      { text: 'ניר', confidence: 93, bbox: { x0: 220, y0: 687, x1: 260, y1: 702 } }, // ~32px below — same cell
+      { text: 'כהן', confidence: 93, bbox: { x0: 180, y0: 690, x1: 220, y1: 705 } },
+    ]
+    const { grid } = clusterWordsIntoGrid(words)
+    expect(grid.rows).toHaveLength(1)
+    expect(grid.rows[0][0].text).toContain('06:30-15:00')
+    expect(grid.rows[0][0].text).toContain('ניר')
+  })
+
+  it('keeps two genuinely different table rows separate', () => {
+    const words = [
+      { text: '06:30-15:00', confidence: 95, bbox: { x0: 200, y0: 655, x1: 300, y1: 670 } },
+      { text: 'שם', confidence: 93, bbox: { x0: 220, y0: 687, x1: 260, y1: 702 } },
+      // next logical row starts ~44px below the first row's time-line — must NOT merge
+      { text: '14:30-23:00', confidence: 95, bbox: { x0: 200, y0: 731, x1: 300, y1: 746 } },
+      { text: 'אחר', confidence: 93, bbox: { x0: 220, y0: 764, x1: 260, y1: 779 } },
+    ]
+    const { grid } = clusterWordsIntoGrid(words)
+    expect(grid.rows).toHaveLength(2)
+    expect(grid.rows[0][0].text).toContain('06:30-15:00')
+    expect(grid.rows[1][0].text).toContain('14:30-23:00')
+  })
+
+  it('groups words within one ~330px-wide column, keeping adjacent columns separate', () => {
+    const words = [
+      { text: 'אפרים', confidence: 92, bbox: { x0: 690, y0: 845, x1: 730, y1: 860 } },
+      { text: 'מלסה', confidence: 88, bbox: { x0: 625, y0: 844, x1: 665, y1: 859 } }, // 66px away — same cell
+      { text: 'רועי', confidence: 93, bbox: { x0: 392, y0: 846, x1: 432, y1: 861 } }, // ~300px away — different column
+    ]
+    const { grid } = clusterWordsIntoGrid(words)
+    expect(grid.rows).toHaveLength(1)
+    expect(grid.rows[0]).toHaveLength(2)
   })
 })
