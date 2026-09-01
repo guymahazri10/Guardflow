@@ -53,8 +53,14 @@ export async function computeContentHash(bytes: Uint8Array): Promise<string> {
     .join('')
 }
 
+// Supabase Storage keys must be ASCII-safe — a Hebrew filename (e.g. iOS's
+// default screenshot name "צילום מסך ...") fails upload with "Invalid key"
+// even though the previous version of this function deliberately allowed
+// the Hebrew Unicode block through. The original filename is preserved
+// separately (schedule_imports.original_filename), so the storage key
+// itself doesn't need to stay human-readable — strip anything non-ASCII.
 function sanitizeFilename(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._֐-׿-]/g, '_')
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
 export async function uploadScheduleFile(
