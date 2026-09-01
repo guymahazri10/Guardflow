@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { detectFileKind } from '../lib/scheduleImport/detectFileKind'
 import { parseExcelSchedule } from '../lib/scheduleImport/parseExcelSchedule'
+import { parseImageSchedule } from '../lib/scheduleImport/parseImageSchedule'
 import { normalizeSchedule } from '../lib/scheduleImport/normalizeSchedule'
 import { matchNames } from '../lib/scheduleImport/matchNames'
 import { validateSchedule, type ExistingAssignmentSummary } from '../lib/scheduleImport/validateSchedule'
@@ -18,7 +19,21 @@ import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import { useAuth } from '../contexts/AuthContext'
 import { utcIsoToIsraelHHMM } from '../lib/israelTime'
 
-type WizardStep = 'upload' | 'processing' | 'preview' | 'error'
+type WizardStep = 'upload' | 'imagesSelected' | 'processing' | 'preview' | 'error'
+
+type OcrProgress = { imageIndex: number; totalImages: number; progress: number }
+
+async function concatBytes(files: File[]): Promise<Uint8Array> {
+  const buffers = await Promise.all(files.map((f) => f.arrayBuffer()))
+  const total = buffers.reduce((sum, b) => sum + b.byteLength, 0)
+  const combined = new Uint8Array(total)
+  let offset = 0
+  for (const buf of buffers) {
+    combined.set(new Uint8Array(buf), offset)
+    offset += buf.byteLength
+  }
+  return combined
+}
 
 function getReadableError(error: unknown): string {
   return error instanceof Error ? error.message : 'הפעולה נכשלה. נסה שוב.'
@@ -50,6 +65,8 @@ export function ScheduleImportPage() {
   const [conflicts, setConflicts] = useState<MatchedAssignment[]>([])
   const [detectedWeekStart, setDetectedWeekStart] = useState<string | null>(null)
   const [stats, setStats] = useState({ imported: 0, skipped: 0, unmatched_names: 0 })
+  const [pendingImages, setPendingImages] = useState<File[]>([])
+  const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null)
 
   const profilesQuery = useProfiles()
 
@@ -62,20 +79,84 @@ export function ScheduleImportPage() {
     )
   }
 
-  async function handleFileSelected(file: File) {
-    if (profilesQuery.isLoading) {
-      setErrorMessage('טוען רשימת עובדים, נסה שוב בעוד רגע.')
-      setStep('error')
-      return
+  function checkPreconditions(): string | null {
+    if (profilesQuery.isLoading) return 'טוען רשימת עובדים, נסה שוב בעוד רגע.'
+    if (profilesQuery.isError) return 'טעינת רשימת העובדים נכשלה. נסה לרענן את הדף.'
+    if (!user) return 'יש להתחבר מחדש כדי להעלות קובץ.'
+    return null
+  }
+
+  // Shared by both the Excel and image paths once each has produced a
+  // RawGrid: normalize -> match -> validate -> create the schedule_imports
+  // row -> upload the source file(s) -> move to preview. `parseWarnings`
+  // (e.g. low_confidence_ocr from the image path) are merged into
+  // validateSchedule's own warnings — never dropped.
+  async function finishImport(
+    grid: Parameters<typeof normalizeSchedule>[0],
+    sourceKind: 'excel' | 'image',
+    files: File[],
+    contentHashBytes: Uint8Array,
+    parseWarnings: ValidationWarning[],
+    currentUserId: string,
+  ) {
+    const weekStart = getPreviousSunday(new Date())
+    const { assignments: normalized } = normalizeSchedule(grid, weekStart)
+
+    const profiles = (profilesQuery.data ?? []).map((p) => ({ id: p.id, full_name: p.full_name }))
+    const matched = matchNames(normalized, profiles)
+
+    const weekStartIso =
+      normalized.length > 0
+        ? normalized.reduce((min, a) => (a.work_date < min ? a.work_date : min), normalized[0].work_date)
+        : weekStart.toISOString().slice(0, 10)
+    const existingAssignments = await fetchShiftAssignmentsForWeek(weekStartIso)
+    const existingSummaries: ExistingAssignmentSummary[] = existingAssignments.map((a) => ({
+      work_date: a.work_date,
+      shift_category: a.shift_category,
+      position: a.position,
+      slot_index: a.slot_index,
+      is_manually_edited: a.is_manually_edited,
+    }))
+
+    const validated = validateSchedule(matched, existingSummaries)
+    const combinedWarnings = [...parseWarnings, ...validated.warnings]
+
+    const contentHash = await computeContentHash(contentHashBytes)
+    const scheduleImport = await createScheduleImport({
+      week_start: weekStartIso,
+      source_kind: sourceKind,
+      storage_path: '', // placeholder until the upload below completes and this row is updated
+      original_filename: files.length === 1 ? files[0].name : `${files.length} תמונות`,
+      content_hash: contentHash,
+      created_by: currentUserId,
+    })
+
+    // Multiple images all live under the same import folder; only the first
+    // file's path is recorded on the row (existing single-column schema) —
+    // the rest still land in storage for the manager to review manually if
+    // ever needed, just without a dedicated multi-path audit column.
+    let firstStoragePath: string | null = null
+    for (const file of files) {
+      const { storagePath } = await uploadScheduleFile(file, weekStartIso, scheduleImport.id)
+      if (firstStoragePath === null) firstStoragePath = storagePath
     }
-    if (profilesQuery.isError) {
-      setErrorMessage('טעינת רשימת העובדים נכשלה. נסה לרענן את הדף.')
-      setStep('error')
-      return
+    if (firstStoragePath) {
+      await updateScheduleImportStoragePath(scheduleImport.id, firstStoragePath)
     }
 
-    if (!user) {
-      setErrorMessage('יש להתחבר מחדש כדי להעלות קובץ.')
+    setImportId(scheduleImport.id)
+    setAssignments(validated.assignments)
+    setWarnings(combinedWarnings)
+    setConflicts(validated.conflicts)
+    setDetectedWeekStart(weekStartIso)
+    setStats(validated.stats)
+    setStep('preview')
+  }
+
+  async function handleFileSelected(file: File) {
+    const precondition = checkPreconditions()
+    if (precondition) {
+      setErrorMessage(precondition)
       setStep('error')
       return
     }
@@ -95,58 +176,52 @@ export function ScheduleImportPage() {
       }
 
       const grid = parseExcelSchedule(bytes, kind)
-      // This anchor only feeds the day-of-week fallback and year-disambiguation
-      // inside normalizeSchedule/parseHeaderDate — it does NOT determine the
-      // imported week. The real week comes from the DD/MM dates the file's own
-      // header row carries (Important #4): normalizeSchedule now parses those
-      // directly, so the detected week below is derived from its actual output.
-      const weekStart = getPreviousSunday(new Date())
-      const { assignments: normalized } = normalizeSchedule(grid, weekStart)
-
-      const profiles = (profilesQuery.data ?? []).map((p) => ({ id: p.id, full_name: p.full_name }))
-      const matched = matchNames(normalized, profiles)
-
-      // Authoritative week_start: the earliest work_date actually parsed out of
-      // the file, not the current-week guess above. Falls back to the guess
-      // only if the file yielded no assignments at all (e.g. empty upload).
-      const weekStartIso =
-        normalized.length > 0
-          ? normalized.reduce((min, a) => (a.work_date < min ? a.work_date : min), normalized[0].work_date)
-          : weekStart.toISOString().slice(0, 10)
-      const existingAssignments = await fetchShiftAssignmentsForWeek(weekStartIso)
-      const existingSummaries: ExistingAssignmentSummary[] = existingAssignments.map((a) => ({
-        work_date: a.work_date,
-        shift_category: a.shift_category,
-        position: a.position,
-        slot_index: a.slot_index,
-        is_manually_edited: a.is_manually_edited,
-      }))
-
-      const validated = validateSchedule(matched, existingSummaries)
-
-      const contentHash = await computeContentHash(bytes)
-      const scheduleImport = await createScheduleImport({
-        week_start: weekStartIso,
-        source_kind: 'excel',
-        storage_path: '', // placeholder until the upload below completes and this row is updated
-        original_filename: file.name,
-        content_hash: contentHash,
-        created_by: user.id,
-      })
-
-      const { storagePath } = await uploadScheduleFile(file, weekStartIso, scheduleImport.id)
-      await updateScheduleImportStoragePath(scheduleImport.id, storagePath)
-
-      setImportId(scheduleImport.id)
-      setAssignments(validated.assignments)
-      setWarnings(validated.warnings)
-      setConflicts(validated.conflicts)
-      setDetectedWeekStart(weekStartIso)
-      setStats(validated.stats)
-      setStep('preview')
+      await finishImport(grid, 'excel', [file], bytes, [], user!.id)
     } catch (error) {
       setErrorMessage(getReadableError(error))
       setStep('error')
+    }
+  }
+
+  function handleImagesSelected(files: File[]) {
+    const precondition = checkPreconditions()
+    if (precondition) {
+      setErrorMessage(precondition)
+      setStep('error')
+      return
+    }
+    setErrorMessage(null)
+    setPendingImages(files)
+    setStep('imagesSelected')
+  }
+
+  function removePendingImage(index: number) {
+    setPendingImages((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  async function handleProcessImages() {
+    if (pendingImages.length === 0) return
+
+    setStep('processing')
+    setErrorMessage(null)
+    setOcrProgress({ imageIndex: 0, totalImages: pendingImages.length, progress: 0 })
+
+    try {
+      const imageBytesList = await Promise.all(pendingImages.map((f) => f.arrayBuffer().then((b) => new Uint8Array(b))))
+      const result = await parseImageSchedule(imageBytesList, setOcrProgress)
+
+      if (!result.supported) {
+        throw new Error(result.reason)
+      }
+
+      const combinedBytes = await concatBytes(pendingImages)
+      await finishImport(result.grid, 'image', pendingImages, combinedBytes, result.warnings ?? [], user!.id)
+      setPendingImages([])
+    } catch (error) {
+      setErrorMessage(getReadableError(error))
+      setStep('error')
+    } finally {
+      setOcrProgress(null)
     }
   }
 
@@ -159,16 +234,73 @@ export function ScheduleImportPage() {
             {errorMessage}
           </div>
         )}
-        <input
-          type="file"
-          accept=".xls,.xlsx"
-          disabled={profilesQuery.isLoading}
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) void handleFileSelected(file)
-          }}
-        />
+
+        <div className="mb-4">
+          <p className="font-bold mb-1">קובץ Excel (מומלץ — מדויק ביותר)</p>
+          <input
+            type="file"
+            accept=".xls,.xlsx"
+            disabled={profilesQuery.isLoading}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) void handleFileSelected(file)
+            }}
+          />
+        </div>
+
+        <div>
+          <p className="font-bold mb-1">תמונות (צילומי מסך) — פחות מדויק, דורש אימות</p>
+          <input
+            type="file"
+            accept="image/png,image/jpeg"
+            multiple
+            disabled={profilesQuery.isLoading}
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? [])
+              if (files.length > 0) handleImagesSelected(files)
+              e.target.value = ''
+            }}
+          />
+        </div>
+
         {profilesQuery.isLoading && <p className="text-sm text-gray-500 mt-2">טוען רשימת עובדים…</p>}
+      </div>
+    )
+  }
+
+  if (step === 'imagesSelected') {
+    return (
+      <div dir="rtl" className="p-4">
+        <h1 className="text-xl font-bold mb-4">תצוגה מקדימה של התמונות</h1>
+        <p className="mb-2 text-sm text-gray-600">{pendingImages.length} תמונות נבחרו</p>
+        <div className="flex flex-wrap gap-3 mb-4">
+          {pendingImages.map((file, i) => (
+            <div key={i} className="relative border rounded p-1">
+              <img src={URL.createObjectURL(file)} alt={file.name} className="h-32 w-auto object-contain" />
+              <button
+                type="button"
+                onClick={() => removePendingImage(i)}
+                className="absolute top-0 left-0 bg-red-600 text-white text-xs rounded px-1"
+              >
+                הסר
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPendingImages([])
+              setStep('upload')
+            }}
+          >
+            ביטול
+          </button>
+          <button type="button" onClick={() => void handleProcessImages()} disabled={pendingImages.length === 0}>
+            עבד תמונות
+          </button>
+        </div>
       </div>
     )
   }
@@ -177,6 +309,11 @@ export function ScheduleImportPage() {
     return (
       <div dir="rtl" className="p-4">
         <p>מעבד את הקובץ…</p>
+        {ocrProgress && (
+          <p className="text-sm text-gray-600 mt-2">
+            תמונה {ocrProgress.imageIndex + 1} מתוך {ocrProgress.totalImages} — {Math.round(ocrProgress.progress * 100)}%
+          </p>
+        )}
       </div>
     )
   }

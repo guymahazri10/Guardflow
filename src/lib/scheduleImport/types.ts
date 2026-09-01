@@ -13,7 +13,7 @@ export type RawGrid = {
 }
 
 export type ParseResult =
-  | { supported: true; grid: RawGrid }
+  | { supported: true; grid: RawGrid; warnings?: ValidationWarning[] }
   | { supported: false; reason: string }
 
 export type NormalizedAssignment = {
@@ -33,7 +33,12 @@ export type MatchedAssignment = NormalizedAssignment & {
 }
 
 export type ValidationWarning = {
-  kind: 'unmatched_name' | 'duplicate_slot' | 'empty_cell_skipped' | 'conflict_with_existing'
+  kind:
+    | 'unmatched_name'
+    | 'duplicate_slot'
+    | 'empty_cell_skipped'
+    | 'conflict_with_existing'
+    | 'low_confidence_ocr'
   message: string
   work_date?: string
   position?: string
