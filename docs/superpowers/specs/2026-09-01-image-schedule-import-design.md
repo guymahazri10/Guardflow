@@ -1,8 +1,29 @@
 # Image schedule import (client-side OCR) — design spec
 
 **Date:** 2026-09-01
-**Status:** approved
+**Status:** superseded — see addendum below
 **Branch:** `main` (small addition to the shipped weekly-schedule-import feature)
+
+## Addendum (2026-09-01): replaced by server-side Gemini extraction
+
+The client-side tesseract.js + geometric-clustering pipeline described below
+shipped, but real-device testing against actual `mishmarot.co.il`
+screenshots showed it was too fragile even after recalibrating its
+row/column tolerances against real bounding-box data: dense sections (e.g.
+מאבטח, which has sub-column structure) still produced misread/garbled cells
+and, in one real test, zero recognized assignments. Rather than continue
+tuning geometric heuristics, `parseImageSchedule` now sends each image to a
+new `parse-schedule-image` edge function, which calls the Gemini API
+(`gemini-2.0-flash`, structured JSON output via `responseSchema`) to read
+the table directly — no local OCR engine or clustering step. The API key is
+stored in Supabase Vault (`gemini_api_key`, same `get_app_secret()` pattern
+already used for VAPID keys) and is on Google AI Studio's free tier (no
+billing account attached, per explicit user request to stay free-only).
+`normalizeSchedule` and everything downstream of `RawGrid` is unchanged.
+The tesseract.js dependency and its client-side clustering code were
+removed entirely — the rest of this document describes the superseded
+approach, kept for historical context on why OCR was originally pushed
+client-side.
 
 ## Problem
 

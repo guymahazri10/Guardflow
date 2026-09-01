@@ -208,7 +208,8 @@ export function ScheduleImportPage() {
 
     try {
       const imageBytesList = await Promise.all(pendingImages.map((f) => f.arrayBuffer().then((b) => new Uint8Array(b))))
-      const result = await parseImageSchedule(imageBytesList, setOcrProgress)
+      const mimeTypes = pendingImages.map((f) => f.type || 'image/png')
+      const result = await parseImageSchedule(imageBytesList, setOcrProgress, mimeTypes)
 
       if (!result.supported) {
         throw new Error(result.reason)
