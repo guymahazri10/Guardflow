@@ -42,3 +42,41 @@ export function ClockIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function UploadIcon({ className }: IconProps) {
+  return (
+    <svg {...shared} className={className}>
+      <path d="M12 16V4" />
+      <path d="M7 9l5-5 5 5" />
+      <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </svg>
+  )
+}
+
+export function ImageIcon({ className }: IconProps) {
+  return (
+    <svg {...shared} className={className}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="M21 16l-5.5-5.5a2 2 0 0 0-2.83 0L3 20" />
+    </svg>
+  )
+}
+
+export function CheckCircleIcon({ className }: IconProps) {
+  return (
+    <svg {...shared} className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 12.5l2.3 2.3L15.5 9" />
+    </svg>
+  )
+}
+
+export function XIcon({ className }: IconProps) {
+  return (
+    <svg {...shared} className={className}>
+      <path d="M18 6 6 18" />
+      <path d="M6 6l12 12" />
+    </svg>
+  )
+}

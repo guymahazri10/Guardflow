@@ -26,6 +26,7 @@ import { useProfiles } from '../hooks/useProfiles'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import { useAuth } from '../contexts/AuthContext'
 import { utcIsoToIsraelHHMM } from '../lib/israelTime'
+import { AlertIcon, CheckCircleIcon, ImageIcon, UploadIcon, XIcon } from '../components/ui/StateIcon'
 
 type WizardStep = 'upload' | 'imagesSelected' | 'processing' | 'preview' | 'error'
 
@@ -61,6 +62,33 @@ function getPreviousSunday(date: Date): Date {
   return result
 }
 
+function PageShell({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-none">{children}</div>
+}
+
+function PageHeader({ light, bold }: { light: string; bold: string }) {
+  return (
+    <div className="bg-white border-b border-border px-4 pt-5 pb-4">
+      <h1 className="text-lg">
+        <span className="font-light text-text-secondary">{light}</span>{' '}
+        <b className="font-extrabold">{bold}</b>
+      </h1>
+    </div>
+  )
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-xl border border-danger/20 bg-danger-light px-4 py-3 text-sm text-danger flex items-start gap-2"
+    >
+      <AlertIcon className="shrink-0 w-4 h-4 mt-0.5" />
+      <span>{message}</span>
+    </div>
+  )
+}
+
 export function ScheduleImportPage() {
   const flag = useFeatureFlag('weekly_schedule_import')
   const { user } = useAuth()
@@ -82,9 +110,12 @@ export function ScheduleImportPage() {
   if (flag.loading) return null
   if (!flag.enabled) {
     return (
-      <div dir="rtl" className="p-4">
-        <p>התכונה אינה זמינה כרגע.</p>
-      </div>
+      <PageShell>
+        <PageHeader light="ייבוא" bold="סידור שבועי" />
+        <div className="p-4">
+          <p className="text-sm text-text-secondary">התכונה אינה זמינה כרגע.</p>
+        </div>
+      </PageShell>
     )
   }
 
@@ -256,94 +287,134 @@ export function ScheduleImportPage() {
 
   if (step === 'upload' || step === 'error') {
     return (
-      <div dir="rtl" className="p-4">
-        <h1 className="text-xl font-bold mb-4">ייבוא סידור שבועי</h1>
-        {errorMessage && (
-          <div className="bg-red-100 text-red-800 p-3 rounded mb-4" role="alert">
-            {errorMessage}
-          </div>
-        )}
+      <PageShell>
+        <PageHeader light="ייבוא" bold="סידור שבועי" />
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-6">
+          {errorMessage && <ErrorBanner message={errorMessage} />}
 
-        <div className="mb-4">
-          <p className="font-bold mb-1">קובץ Excel (מומלץ — מדויק ביותר)</p>
-          <input
-            type="file"
-            accept=".xls,.xlsx"
-            disabled={profilesQuery.isLoading}
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) void handleFileSelected(file)
-            }}
-          />
+          <label
+            className={`card border-2 border-dashed border-border-strong p-6 flex flex-col items-center text-center gap-2 transition-colors ${
+              profilesQuery.isLoading ? 'opacity-50' : 'active:bg-primary-light/40 cursor-pointer'
+            }`}
+          >
+            <input
+              type="file"
+              accept=".xls,.xlsx"
+              disabled={profilesQuery.isLoading}
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void handleFileSelected(file)
+              }}
+            />
+            <div className="w-11 h-11 rounded-full bg-primary-light flex items-center justify-center text-primary">
+              <UploadIcon className="w-5 h-5" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <p className="font-bold text-text-primary text-sm">קובץ Excel</p>
+              <span className="text-[11px] font-bold bg-primary-light text-primary rounded-badge px-2 py-0.5">
+                מומלץ
+              </span>
+            </div>
+            <p className="text-xs text-text-muted">מדויק ביותר · .xls / .xlsx</p>
+          </label>
+
+          <label
+            className={`card border-2 border-dashed border-border-strong p-6 flex flex-col items-center text-center gap-2 transition-colors ${
+              profilesQuery.isLoading ? 'opacity-50' : 'active:bg-primary-light/40 cursor-pointer'
+            }`}
+          >
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              multiple
+              disabled={profilesQuery.isLoading}
+              className="hidden"
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? [])
+                if (files.length > 0) handleImagesSelected(files)
+                e.target.value = ''
+              }}
+            />
+            <div className="w-11 h-11 rounded-full bg-background-2 flex items-center justify-center text-text-secondary">
+              <ImageIcon className="w-5 h-5" />
+            </div>
+            <p className="font-bold text-text-primary text-sm">תמונות (צילומי מסך)</p>
+            <p className="text-xs text-text-muted">פחות מדויק · דורש אימות לפני פרסום</p>
+          </label>
+
+          {profilesQuery.isLoading && (
+            <p className="text-xs text-text-secondary text-center">טוען רשימת עובדים…</p>
+          )}
         </div>
-
-        <div>
-          <p className="font-bold mb-1">תמונות (צילומי מסך) — פחות מדויק, דורש אימות</p>
-          <input
-            type="file"
-            accept="image/png,image/jpeg"
-            multiple
-            disabled={profilesQuery.isLoading}
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? [])
-              if (files.length > 0) handleImagesSelected(files)
-              e.target.value = ''
-            }}
-          />
-        </div>
-
-        {profilesQuery.isLoading && <p className="text-sm text-gray-500 mt-2">טוען רשימת עובדים…</p>}
-      </div>
+      </PageShell>
     )
   }
 
   if (step === 'imagesSelected') {
     return (
-      <div dir="rtl" className="p-4">
-        <h1 className="text-xl font-bold mb-4">תצוגה מקדימה של התמונות</h1>
-        <p className="mb-2 text-sm text-gray-600">{pendingImages.length} תמונות נבחרו</p>
-        <div className="flex flex-wrap gap-3 mb-4">
-          {pendingImages.map((file, i) => (
-            <div key={i} className="relative border rounded p-1">
-              <img src={URL.createObjectURL(file)} alt={file.name} className="h-32 w-auto object-contain" />
-              <button
-                type="button"
-                onClick={() => removePendingImage(i)}
-                className="absolute top-0 left-0 bg-red-600 text-white text-xs rounded px-1"
-              >
-                הסר
-              </button>
-            </div>
-          ))}
+      <PageShell>
+        <PageHeader light="תצוגה מקדימה של" bold="התמונות" />
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-6">
+          <p className="text-sm text-text-secondary">{pendingImages.length} תמונות נבחרו</p>
+
+          <div className="grid grid-cols-3 gap-2">
+            {pendingImages.map((file, i) => (
+              <div key={i} className="relative rounded-xl overflow-hidden border border-border aspect-square bg-background-2">
+                <img src={URL.createObjectURL(file)} alt={file.name} className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removePendingImage(i)}
+                  aria-label="הסר תמונה"
+                  className="absolute top-1 left-1 w-6 h-6 rounded-full bg-danger text-white flex items-center justify-center shadow-card active:opacity-80"
+                >
+                  <XIcon className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2 mt-2">
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                setPendingImages([])
+                setStep('upload')
+              }}
+            >
+              ביטול
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void handleProcessImages()}
+              disabled={pendingImages.length === 0}
+            >
+              עבד תמונות
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setPendingImages([])
-              setStep('upload')
-            }}
-          >
-            ביטול
-          </button>
-          <button type="button" onClick={() => void handleProcessImages()} disabled={pendingImages.length === 0}>
-            עבד תמונות
-          </button>
-        </div>
-      </div>
+      </PageShell>
     )
   }
 
   if (step === 'processing') {
     return (
-      <div dir="rtl" className="p-4">
-        <p>מעבד את הקובץ…</p>
-        {ocrProgress && (
-          <p className="text-sm text-gray-600 mt-2">
-            תמונה {ocrProgress.imageIndex + 1} מתוך {ocrProgress.totalImages} — {Math.round(ocrProgress.progress * 100)}%
-          </p>
-        )}
-      </div>
+      <PageShell>
+        <PageHeader light="ייבוא" bold="סידור שבועי" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4">
+          <div className="w-12 h-12 rounded-full bg-primary-light flex items-center justify-center">
+            <span className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          </div>
+          <p className="font-bold text-text-primary text-sm">מעבד את הקובץ…</p>
+          {ocrProgress && (
+            <p className="text-xs text-text-secondary tabular-nums">
+              תמונה {ocrProgress.imageIndex + 1} מתוך {ocrProgress.totalImages}
+            </p>
+          )}
+        </div>
+      </PageShell>
     )
   }
 
@@ -373,31 +444,130 @@ function CoverageReport({ coverage }: { coverage: NormalizeExtractedResult['cove
 
   return (
     <div
-      className={`p-3 rounded mb-4 ${complete ? 'bg-green-50 text-green-900' : 'bg-amber-50 text-amber-900'}`}
+      className={`card p-4 flex gap-2.5 ${
+        complete ? 'bg-good-light border-good/20' : 'bg-warning-light border-warning/20'
+      }`}
     >
-      <p className="font-bold mb-1">
-        {complete ? 'הטבלה נקראה במלואה' : 'ייתכן שחלק מהטבלה חסר'}
-      </p>
-      <p className="text-sm">
-        ימים: {coverage.datesFound.length} מתוך 7 · עמדות: {coverage.positionsFound.length} מתוך{' '}
-        {totalPositions}
-      </p>
-      {coverage.positionsMissing.length > 0 && (
-        <p className="text-sm mt-1">
-          עמדות שלא נמצאו: {coverage.positionsMissing.map((p) => `${p.position} (${p.worker_kind})`).join(' · ')}
-        </p>
+      {complete ? (
+        <CheckCircleIcon className="shrink-0 w-4 h-4 mt-0.5 text-good" />
+      ) : (
+        <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-warning" />
       )}
-      {!complete && (
-        <p className="text-sm mt-1">
-          אם חסרות שורות — ייתכן שהצילום חתוך. אפשר לבטל ולהעלות צילום מלא, או להעלות כמה תמונות יחד.
+      <div>
+        <p className={`font-bold text-sm ${complete ? 'text-good' : 'text-warning'}`}>
+          {complete ? 'הטבלה נקראה במלואה' : 'ייתכן שחלק מהטבלה חסר'}
         </p>
-      )}
+        <p className={`text-xs mt-0.5 ${complete ? 'text-good' : 'text-warning'}`}>
+          ימים: {coverage.datesFound.length} מתוך 7 · עמדות: {coverage.positionsFound.length} מתוך {totalPositions}
+        </p>
+        {coverage.positionsMissing.length > 0 && (
+          <p className="text-xs mt-1 text-warning">
+            עמדות שלא נמצאו: {coverage.positionsMissing.map((p) => `${p.position} (${p.worker_kind})`).join(' · ')}
+          </p>
+        )}
+        {!complete && (
+          <p className="text-xs mt-1 text-warning">
+            אם חסרות שורות — ייתכן שהצילום חתוך. אפשר לבטל ולהעלות צילום מלא, או להעלות כמה תמונות יחד.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function StatChip({ label, value, tone }: { label: string; value: number; tone: 'good' | 'neutral' | 'warning' }) {
+  const toneClasses =
+    tone === 'good'
+      ? 'bg-good-light text-good'
+      : tone === 'warning'
+        ? 'bg-warning-light text-warning'
+        : 'bg-background-2 text-text-secondary'
+
+  return (
+    <div className={`flex-1 rounded-xl px-3 py-2.5 text-center ${toneClasses}`}>
+      <p className="text-lg font-extrabold tabular-nums leading-none">{value}</p>
+      <p className="text-[11px] font-semibold mt-1">{label}</p>
     </div>
   )
 }
 
 function identityKey(a: { work_date: string; shift_category: string; position: string; slot_index: number }): string {
   return `${a.work_date}|${a.shift_category}|${a.position}|${a.slot_index}`
+}
+
+const selectFieldClass =
+  'bg-white border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary transition'
+
+function MatchConfidenceCell({
+  assignment,
+  profiles,
+  isConfirmed,
+  onAssignExisting,
+  onConfirmFuzzy,
+}: {
+  assignment: MatchedAssignment
+  profiles: { id: string; full_name: string | null }[]
+  isConfirmed: boolean
+  onAssignExisting: (userId: string, name: string) => void
+  onConfirmFuzzy: () => void
+}) {
+  if (assignment.match_confidence === 'exact') {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-bold text-good bg-good-light rounded-badge px-2 py-0.5">
+        <CheckCircleIcon className="w-3.5 h-3.5" />
+        מדויק
+      </span>
+    )
+  }
+
+  if (assignment.match_confidence === 'fuzzy') {
+    return (
+      <div className="flex items-center gap-1.5">
+        <select
+          className={selectFieldClass}
+          onChange={(e) => onAssignExisting(e.target.value, assignment.source_name ?? '')}
+          defaultValue=""
+        >
+          <option value="" disabled>
+            אישור התאמה
+          </option>
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.full_name}
+            </option>
+          ))}
+        </select>
+        {!isConfirmed ? (
+          <button
+            type="button"
+            className="text-xs font-bold text-warning bg-warning-light rounded-lg px-2 py-1.5 active:opacity-70"
+            onClick={onConfirmFuzzy}
+          >
+            אישור
+          </button>
+        ) : (
+          <span className="text-xs font-bold text-good">✓ אושר</span>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <select
+      className={`${selectFieldClass} border-danger/40`}
+      onChange={(e) => onAssignExisting(e.target.value, assignment.source_name ?? '')}
+      defaultValue=""
+    >
+      <option value="" disabled>
+        בחר עובד קיים
+      </option>
+      {profiles.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.full_name}
+        </option>
+      ))}
+    </select>
+  )
 }
 
 function SchedulePreview({
@@ -498,143 +668,140 @@ function SchedulePreview({
 
   if (published) {
     return (
-      <div dir="rtl" className="p-4">
-        <p className="text-green-700 font-bold">הסידור פורסם בהצלחה.</p>
-      </div>
+      <PageShell>
+        <PageHeader light="תצוגה" bold="מקדימה" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4">
+          <CheckCircleIcon className="w-12 h-12 text-good" />
+          <p className="text-good font-bold">הסידור פורסם בהצלחה.</p>
+        </div>
+      </PageShell>
     )
   }
 
   return (
-    <div dir="rtl" className="p-4">
-      <h1 className="text-xl font-bold mb-2">תצוגה מקדימה</h1>
-      {detectedWeekStart && <p className="text-sm text-gray-600 mb-1">שבוע מזוהה: החל מ-{detectedWeekStart}</p>}
-      <p className="mb-4">
-        ייקלטו: {stats.imported} · דולגו: {stats.skipped} · שמות שלא זוהו: {stats.unmatched_names}
-      </p>
+    <PageShell>
+      <PageHeader light="תצוגה" bold="מקדימה" />
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-6">
+        {detectedWeekStart && (
+          <p className="text-xs text-text-secondary">שבוע מזוהה: החל מ-{detectedWeekStart}</p>
+        )}
 
-      {coverage && <CoverageReport coverage={coverage} />}
+        <div className="flex gap-2">
+          <StatChip label="ייקלטו" value={stats.imported} tone="good" />
+          <StatChip label="דולגו" value={stats.skipped} tone="neutral" />
+          <StatChip label="שמות שלא זוהו" value={stats.unmatched_names} tone="warning" />
+        </div>
 
-      {warnings.length > 0 && (
-        <ul className="bg-yellow-50 text-yellow-900 p-3 rounded mb-4">
-          {warnings.map((w, i) => (
-            <li key={i}>{w.message}</li>
-          ))}
-        </ul>
-      )}
+        {coverage && <CoverageReport coverage={coverage} />}
 
-      <table className="w-full text-right mb-4">
-        <thead>
-          <tr>
-            <th>תאריך</th>
-            <th>משמרת</th>
-            <th>תפקיד</th>
-            <th>עמדה</th>
-            <th>שעות</th>
-            <th>שם</th>
-            <th>התאמה</th>
-            <th>עריכה ידנית</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {assignments.map((a, i) => {
-            const key = identityKey(a)
-            const isConflict = conflictKeys.has(key)
-            return (
-              <tr key={i}>
-                <td>{a.work_date}</td>
-                <td>{a.shift_category}</td>
-                <td>{a.worker_kind}</td>
-                <td>{a.position}</td>
-                <td>
-                  {utcIsoToIsraelHHMM(a.starts_at)}–{utcIsoToIsraelHHMM(a.ends_at)}
-                </td>
-                <td>
-                  <input
-                    value={a.source_name ?? ''}
-                    onChange={(e) => editName(i, e.target.value)}
-                    className="border rounded px-1"
-                  />
-                </td>
-                <td>
-                  {a.match_confidence === 'exact' && '✓'}
-                  {a.match_confidence === 'fuzzy' && (
-                    <div className="flex items-center gap-1">
-                      <select
-                        onChange={(e) => assignExistingProfile(i, e.target.value, a.source_name ?? '')}
-                        defaultValue=""
-                      >
-                        <option value="" disabled>
-                          אישור התאמה
-                        </option>
-                        {(profilesQuery.data ?? []).map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.full_name}
-                          </option>
-                        ))}
-                      </select>
-                      {!confirmedFuzzy.has(key) ? (
-                        <button type="button" className="border rounded px-1 text-sm" onClick={() => confirmFuzzyMatch(a)}>
-                          אישור
+        {warnings.length > 0 && (
+          <div className="card p-4 bg-warning-light border-warning/20 flex gap-2.5">
+            <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-warning" />
+            <ul className="flex flex-col gap-1 text-xs text-warning">
+              {warnings.map((w, i) => (
+                <li key={i}>{w.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-text-secondary text-xs">
+                  <th className="px-3 py-2.5 font-bold text-right">תאריך</th>
+                  <th className="px-3 py-2.5 font-bold text-right">משמרת</th>
+                  <th className="px-3 py-2.5 font-bold text-right">תפקיד</th>
+                  <th className="px-3 py-2.5 font-bold text-right">עמדה</th>
+                  <th className="px-3 py-2.5 font-bold text-right">שעות</th>
+                  <th className="px-3 py-2.5 font-bold text-right">שם</th>
+                  <th className="px-3 py-2.5 font-bold text-right">התאמה</th>
+                  <th className="px-3 py-2.5 font-bold text-right">עריכה ידנית</th>
+                  <th className="px-3 py-2.5"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignments.map((a, i) => {
+                  const key = identityKey(a)
+                  const isConflict = conflictKeys.has(key)
+                  return (
+                    <tr key={i} className="border-b border-border last:border-0">
+                      <td className="px-3 py-2 whitespace-nowrap">{a.work_date}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{a.shift_category}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{a.worker_kind}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{a.position}</td>
+                      <td className="px-3 py-2 whitespace-nowrap tabular-nums">
+                        {utcIsoToIsraelHHMM(a.starts_at)}–{utcIsoToIsraelHHMM(a.ends_at)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          value={a.source_name ?? ''}
+                          onChange={(e) => editName(i, e.target.value)}
+                          className="w-28 bg-white border border-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary transition"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <MatchConfidenceCell
+                          assignment={a}
+                          profiles={profilesQuery.data ?? []}
+                          isConfirmed={confirmedFuzzy.has(key)}
+                          onAssignExisting={(userId, name) => assignExistingProfile(i, userId, name)}
+                          onConfirmFuzzy={() => confirmFuzzyMatch(a)}
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        {isConflict && (
+                          <label className="flex items-start gap-1.5 text-[11px] text-warning max-w-[160px]">
+                            <input
+                              type="checkbox"
+                              checked={overrides.has(key)}
+                              onChange={() => toggleOverride(a)}
+                              className="mt-0.5 accent-warning"
+                            />
+                            שיבוץ זה נערך ידנית — האם לדרוס מהקובץ?
+                          </label>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => removeRow(i)}
+                          aria-label="הסר שורה"
+                          className="text-text-muted active:text-danger active:bg-danger-light rounded-lg p-1.5 transition-colors"
+                        >
+                          <XIcon className="w-4 h-4" />
                         </button>
-                      ) : (
-                        <span className="text-green-700 text-sm">✓ אושר</span>
-                      )}
-                    </div>
-                  )}
-                  {a.match_confidence === 'none' && (
-                    <select onChange={(e) => assignExistingProfile(i, e.target.value, a.source_name ?? '')} defaultValue="">
-                      <option value="" disabled>
-                        בחר עובד קיים
-                      </option>
-                      {(profilesQuery.data ?? []).map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </td>
-                <td>
-                  {isConflict && (
-                    <label className="flex items-center gap-1 text-xs text-amber-800">
-                      <input type="checkbox" checked={overrides.has(key)} onChange={() => toggleOverride(a)} />
-                      שיבוץ זה נערך ידנית — האם לדרוס מהקובץ?
-                    </label>
-                  )}
-                </td>
-                <td>
-                  <button type="button" onClick={() => removeRow(i)}>
-                    הסר
-                  </button>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-
-      {publishBlocked && (
-        <div className="bg-yellow-50 text-yellow-900 p-3 rounded mb-4" role="alert">
-          {hasUnresolvedFuzzy && <p>יש לאשר את כל ההתאמות המשוערות (התאמה לא ודאית) לפני פרסום.</p>}
-          {hasUnresolvedNone && <p>יש לבחור עובד קיים או להסיר כל שורה עם שם שלא זוהה לפני פרסום.</p>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      )}
 
-      {publishError && (
-        <div className="bg-red-100 text-red-800 p-3 rounded mb-4" role="alert">
-          {publishError}
+        {publishBlocked && (
+          <div role="alert" className="card p-4 bg-warning-light border-warning/20 flex gap-2.5">
+            <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-warning" />
+            <div className="text-xs text-warning flex flex-col gap-0.5">
+              {hasUnresolvedFuzzy && <p>יש לאשר את כל ההתאמות המשוערות (התאמה לא ודאית) לפני פרסום.</p>}
+              {hasUnresolvedNone && <p>יש לבחור עובד קיים או להסיר כל שורה עם שם שלא זוהה לפני פרסום.</p>}
+            </div>
+          </div>
+        )}
+
+        {publishError && <ErrorBanner message={publishError} />}
+
+        <div className="flex gap-2">
+          <button type="button" className="btn-ghost" onClick={onCancel} disabled={publishing}>
+            ביטול
+          </button>
+          <button type="button" className="btn-primary" onClick={handlePublish} disabled={publishing || publishBlocked}>
+            {publishing ? 'מפרסם…' : 'פרסם'}
+          </button>
         </div>
-      )}
-
-      <div className="flex gap-2">
-        <button type="button" onClick={onCancel} disabled={publishing}>
-          ביטול
-        </button>
-        <button type="button" onClick={handlePublish} disabled={publishing || publishBlocked}>
-          {publishing ? 'מפרסם…' : 'פרסם'}
-        </button>
       </div>
-    </div>
+    </PageShell>
   )
 }
