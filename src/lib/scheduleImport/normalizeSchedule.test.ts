@@ -112,7 +112,7 @@ describe('normalizeSchedule', () => {
     expect(assignments[0].shift_category).toBe('night')
   })
 
-  it('classifies shift_category from the start hour per SHIFT_CATEGORIES boundaries', () => {
+  it('classifies shift_category from the start hour', () => {
     const grid: RawGrid = {
       rows: [
         [cell(''), cell('ראשון 06/09')],
@@ -124,6 +124,61 @@ describe('normalizeSchedule', () => {
     const { assignments } = normalizeSchedule(grid, weekStart)
     expect(assignments.find((a) => a.position === 'א')?.shift_category).toBe('morning')
     expect(assignments.find((a) => a.position === 'ב')?.shift_category).toBe('afternoon')
+  })
+
+  // Regression: classifyCategory originally reused src/constants/shifts.ts's
+  // canonical clock boundaries (07:00/15:00/23:00), but every real shift
+  // starts in the 30-minute handover buffer BEFORE those — so every single
+  // row came out one category backwards. These are the actual start times
+  // from the real weekly schedule, including the exceptional ones.
+  it('classifies the real 06:30/14:30/22:30 start times into the right categories', () => {
+    const grid: RawGrid = {
+      rows: [
+        [cell(''), cell('ראשון 06/09')],
+        [cell('אחמ"ש')],
+        [cell('אחמ"ש בוקר'), cell('06:30-15:00 בדיקה־א׳')],
+        [cell('אחמ"ש צהריים'), cell('14:30-23:00 בדיקה־ב׳')],
+        [cell('אחמ"ש לילה'), cell('22:30-07:00 בדיקה־ג׳')],
+        [cell('מאבטח')],
+        [cell('לובי תחתון'), cell('06:45-15:10 בדיקה־ד׳')],
+        [cell('AB'), cell('14:45-23:10 בדיקה־ה׳')],
+        [cell('מאבטח לילה'), cell('22:45-07:10 בדיקה־ו׳')],
+      ],
+    }
+    const { assignments } = normalizeSchedule(grid, weekStart)
+    const categoryOf = (position: string) =>
+      assignments.find((a) => a.position === position)?.shift_category
+
+    expect(categoryOf('אחמ"ש בוקר')).toBe('morning')
+    expect(categoryOf('אחמ"ש צהריים')).toBe('afternoon')
+    expect(categoryOf('אחמ"ש לילה')).toBe('night')
+    expect(categoryOf('לובי תחתון')).toBe('morning')
+    expect(categoryOf('AB')).toBe('afternoon')
+    expect(categoryOf('מאבטח לילה')).toBe('night')
+  })
+
+  it('classifies exceptional/partial shift start times into the right categories', () => {
+    const grid: RawGrid = {
+      rows: [
+        [cell(''), cell('ראשון 06/09')],
+        [cell('מאבטח')],
+        // Late morning start, and a long morning shift running into evening
+        [cell('א'), cell('08:00-15:10 בדיקה־א׳')],
+        [cell('ב'), cell('06:30-19:00 בדיקה־ב׳')],
+        // Short afternoon shift ending early
+        [cell('ג'), cell('14:45-18:30 בדיקה־ג׳')],
+        // Night shift starting unusually early
+        [cell('ד'), cell('21:00-07:10 בדיקה־ד׳')],
+      ],
+    }
+    const { assignments } = normalizeSchedule(grid, weekStart)
+    const categoryOf = (position: string) =>
+      assignments.find((a) => a.position === position)?.shift_category
+
+    expect(categoryOf('א')).toBe('morning')
+    expect(categoryOf('ב')).toBe('morning')
+    expect(categoryOf('ג')).toBe('afternoon')
+    expect(categoryOf('ד')).toBe('night')
   })
 
   it('handles names with quotes, apostrophes, and extra spaces without corrupting them', () => {
