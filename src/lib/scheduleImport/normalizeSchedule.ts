@@ -3,8 +3,8 @@
 // Expected shape: header row = day names/dates; column-0 section cells
 // (אחמ"ש / מאבטח / excluded labels) start a block; subsequent column-0
 // cells are position labels; other cells are "HH:MM-HH:MM name" lines.
-import type { NormalizedAssignment, RawGrid, ShiftCategory, WorkerKind } from './types'
-import { israelLocalToUtcIso } from '../israelTime'
+import type { NormalizedAssignment, RawGrid, WorkerKind } from './types'
+import { classifyCategory, israelRangeToUtc } from './assignmentTime'
 
 const WORKER_KIND_LABELS: Record<string, WorkerKind> = {
   'אחמ"ש': 'אחמ"ש',
@@ -107,42 +107,12 @@ function parseHeaderDate(rawHeader: string, weekStart: Date): Date | null {
   return date
 }
 
-// Deliberately NOT the same boundaries as src/constants/shifts.ts (07:00 /
-// 15:00 / 23:00). Those describe the *clock windows* the live page uses to
-// decide which shift is on air right now; these classify a shift by the hour
-// it actually STARTS, and real shifts start in the 30-minute handover buffer
-// before each canonical boundary — 06:30 or 06:45 (morning), 14:30 or 14:45
-// (afternoon), 22:30 or 22:45 (night). Reusing the canonical boundaries here
-// pushed every single row one category backwards (a 06:30 morning shift was
-// filed as 'night', 14:30 afternoon as 'morning', 22:30 night as
-// 'afternoon'), which also broke the live lookup, since shift_category is
-// part of shift_assignments' uniqueness key and ShiftLivePage matches on it.
-//
-// The boundaries below sit in the empty gaps between the real start-time
-// clusters (latest observed morning start 08:00, earliest afternoon 14:30;
-// latest afternoon 14:45, earliest night 21:00), so each has hours of margin
-// on both sides rather than sitting right on top of a cluster. Exceptional
-// start times seen in real files — 08:00, 21:00 — land correctly.
-const MORNING_START_HOUR = 5
-const AFTERNOON_START_HOUR = 13
-const NIGHT_START_HOUR = 21
-
-function classifyCategory(startHour: number): ShiftCategory {
-  if (startHour >= MORNING_START_HOUR && startHour < AFTERNOON_START_HOUR) return 'morning'
-  if (startHour >= AFTERNOON_START_HOUR && startHour < NIGHT_START_HOUR) return 'afternoon'
-  return 'night'
-}
-
-// `date`'s UTC Y/M/D components represent the intended Israel calendar date
-// (see parseHeaderDate — it's built from weekStart via setUTCDate, so its
-// UTC fields are the calendar date, not an instant to be reused directly).
-// `hour`/`minute` are read straight from the cell's "HH:MM-HH:MM" text and
-// are always meant as Israel local time (GuardFlow is Israel-only) — so they
-// must be converted through the real Asia/Jerusalem UTC offset (DST-aware),
-// not stamped on as if they were already UTC.
-function toIso(date: Date, hour: number, minute: number): string {
-  return israelLocalToUtcIso(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), hour, minute)
-}
+// classifyCategory / israelRangeToUtc live in assignmentTime.ts: the image
+// import path builds assignments directly from structured records rather than
+// from a grid, and both paths must derive category and UTC instants
+// identically — shift_category and starts_at are what the live page matches
+// on, so a divergence between the two importers would surface as assignments
+// that exist but never display.
 
 function cleanName(raw: string): string {
   return raw.replace(/\s+/g, ' ').trim()
@@ -207,11 +177,13 @@ export function normalizeSchedule(
         const endHour = Number(endHourStr)
         const endMin = Number(endMinStr)
 
-        const startsAt = toIso(date, startHour, startMin)
-        const crossesMidnight = endHour < startHour || (endHour === startHour && endMin < startMin)
-        const endDate = new Date(date)
-        if (crossesMidnight) endDate.setUTCDate(endDate.getUTCDate() + 1)
-        const endsAt = toIso(endDate, endHour, endMin)
+        const { starts_at: startsAt, ends_at: endsAt } = israelRangeToUtc(
+          date,
+          startHour,
+          startMin,
+          endHour,
+          endMin,
+        )
 
         assignments.push({
           work_date: date.toISOString().slice(0, 10),

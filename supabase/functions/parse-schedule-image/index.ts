@@ -72,8 +72,8 @@ async function requireManager(req: Request): Promise<ManagerCheckResult> {
 // already been retired out from under this function ("gemini-2.0-flash" is
 // gone, "gemini-2.5-flash" now 404s as "no longer available to new users"),
 // and a hard 404 in an app nobody is monitoring is worse than the alias's
-// risk of behavior drift — the cell parsing below is written to absorb that
-// drift rather than depend on one model's exact output formatting.
+// risk of behavior drift — this function no longer depends on the model's
+// exact text formatting, only on the declared JSON schema.
 const GEMINI_MODEL = 'gemini-flash-lite-latest'
 
 // Latency is unstable even on the lite model: the same image measured 5.6s,
@@ -84,54 +84,85 @@ const GEMINI_MODEL = 'gemini-flash-lite-latest'
 const GEMINI_TIMEOUT_MS = 25_000
 const GEMINI_MAX_ATTEMPTS = 2
 
-// Kept in close sync with the section/entry conventions
-// src/lib/scheduleImport/normalizeSchedule.ts expects: row[0] is the label
-// column (a section header like אחמ"ש/מאבטח with every other cell in that
-// row empty, or a position label), other rows carry "HH:MM-HH:MM name"
-// lines per cell (one line per worker in that slot). normalizeSchedule does
-// its own EXCLUDED_SECTION_LABELS filtering, but asking Gemini to already
-// omit those sections avoids wasting output tokens and avoids leaking
-// unrelated categories into warnings/preview if the filter ever drifts.
-const PROMPT = `אתה מנתח טבלת סידור עבודה שבועי מצילום מסך של מערכת מש"מרות.
+/**
+ * Asks for finished assignment records rather than a picture of the table.
+ *
+ * The previous version asked for a 2D grid of cell strings, which the client
+ * then re-parsed back into structure — and every import bug so far lived in
+ * that re-parsing, never in the model's reading. Requesting the fields
+ * separately (a real ISO date, a position from a closed list, start and end
+ * as HH:MM, the name on its own) removes the ambiguity the grid reintroduced.
+ */
+function buildPrompt(positionsBlock: string, today: string): string {
+  return `אתה מנתח טבלת סידור עבודה שבועי מצילום מסך של מערכת משמרות.
 
 החזר אך ורק JSON תואם לסכימה שסופקה. אל תוסיף טקסט מחוץ ל-JSON.
 
+המשימה: החזר רשימה שטוחה של כל השיבוצים בטבלה. כל שיבוץ הוא רשומה אחת —
+עובד אחד, ביום אחד, בעמדה אחת. אל תחזיר טבלה או רשת; רק רשימת רשומות.
+
 כללים קפדניים:
-1. כלול אך ורק שורות ששייכות לסעיפים "אחמ"ש" ו"מאבטח". התעלם לחלוטין מכל סעיף אחר
-   (למשל: בקרה, היעדרויות, חופש, מחלה, מילואים, קורס, לימודים, תגבור) — אל תכלול
-   את השורות שלהם בפלט כלל.
-2. rows[0] היא שורת הכותרת: התא הראשון הוא כותרת עמודת התפקיד/עמדה, והתאים
-   הבאים הם תאריכי הימים כפי שמופיעים בתמונה (למשל "06/09" או שם יום בעברית).
-3. שורת כותרת סעיף (אחמ"ש / מאבטח) — התא הראשון מכיל את שם הסעיף, וכל שאר
-   התאים בשורה ריקים ("").
-4. שורת עמדה — התא הראשון הוא שם העמדה/התפקיד בלבד, ללא שעות וללא תאריכים.
-   לדוגמה: "לובי תחתון", "AB", "רכוב בוקר", "אחמ"ש בוקר". אם בתמונה מופיעות
-   שעות לצד שם העמדה — השמט אותן משם העמדה. שאר התאים בשורה הם התוכן בפועל
-   של אותו יום עבור אותה עמדה.
-5. בכל תא נתונים, קרא את השעות בפועל כפי שמופיעות בתמונה (לא ברירת מחדל לפי
-   קטגוריה) והחזר כל שיבוץ כשורת טקסט בפורמט המדויק: "HH:MM-HH:MM שם_עובד".
-   אם יש כמה עובדים באותו תא (כמה משמרות/עמדות משנה), החזר כמה שורות בתוך
-   אותו תא, כל אחת בשורה נפרדת (\\n).
-6. אם תא ריק — החזר מחרוזת ריקה "".
-7. אם התמונה לא ברורה מספיק כדי לקרוא אותה, או שהיא לא צילום מסך של סידור
-   עבודה, החזר supported=false עם reason בעברית שמסביר למה.
-8. אם יש תא שאתה לא בטוח לגבי תוכנו (קריאה מעורפלת/חלקית), עדיין נסה למלא
-   אותו כמיטב יכולתך, אך הוסף אזהרה למערך warnings שמתארת את השורה/עמודה
-   ולמה אתה לא בטוח.`
+
+1. כלול אך ורק שיבוצים מהסעיפים "אחמ"ש" ו"מאבטח".
+   התעלם לחלוטין מכל סעיף אחר — בקרה, היעדרויות, חופש, מחלה, מילואים,
+   קורס, לימודים, תגבור. אל תחזיר את השורות שלהם כלל.
+
+2. שדה date: התאריך המלא בפורמט YYYY-MM-DD. הסק אותו מכותרת העמודה
+   בתמונה. שים לב שהתאריכים בכותרת עשויים להיכתב בצורות שונות, למשל
+   "30\\8" או "30/8" — פענח אותם לתאריך מלא. היום הוא ${today},
+   והסידור הוא לשבוע קרוב לתאריך הזה — קבע את השנה בהתאם.
+
+3. שדה worker_kind: בדיוק אחד משני הערכים: "אחמ"ש" או "מאבטח".
+
+4. שדה position: בחר בדיוק אחד מהערכים המותרים לאותו worker_kind מהרשימה
+   הבאה. אל תמציא ערכים חדשים ואל תוסיף שעות או תאריכים לשם העמדה:
+${positionsBlock}
+   אם שורה בתמונה לא מתאימה לאף אחת מהעמדות האלה — דלג עליה, והוסף
+   הסבר קצר למערך warnings.
+
+5. שדות start ו-end: השעות בפועל של אותו תא, בפורמט HH:MM כל אחד
+   (למשל start="06:30", end="15:00"). קרא את השעות הכתובות בתא עצמו —
+   אל תשתמש בברירת מחדל של השורה או של הקטגוריה. משמרות חריגות קיימות
+   (למשל 06:30-19:00 או 14:45-18:30) והן חייבות להישמר כפי שהן.
+
+6. שדה name: שם העובד בלבד, בלי שעות ובלי תווים נוספים.
+
+7. אם באותו תא מופיעים כמה עובדים, החזר רשומה נפרדת לכל עובד — עם אותו
+   date, position ו-worker_kind, ועם השעות של אותו עובד.
+
+8. תא ריק (בלי שם עובד) — אל תחזיר עבורו רשומה כלל.
+
+9. חשוב מאוד: גם אם התמונה חתוכה, מטושטשת או חלקית — החזר supported=true
+   ואת כל השיבוצים שכן קריאים. חיתוך או חוסר אינם סיבה להימנע מהחזרת
+   נתונים. הוסף ל-warnings תיאור מפורש של מה חסר או לא ודאי (למשל אילו
+   שורות או ימים חתוכים).
+
+10. החזר supported=false אך ורק אם התמונה אינה טבלת סידור עבודה כלל —
+    למשל צילום של משהו אחר לגמרי. טבלה חתוכה, חלקית או מטושטשת היא עדיין
+    טבלת סידור, ועבורה supported=true תמיד.`
+}
 
 const RESPONSE_SCHEMA = {
   type: 'OBJECT',
   properties: {
     supported: { type: 'BOOLEAN' },
     reason: { type: 'STRING' },
-    rows: {
+    assignments: {
       type: 'ARRAY',
-      items: { type: 'ARRAY', items: { type: 'STRING' } },
+      items: {
+        type: 'OBJECT',
+        properties: {
+          date: { type: 'STRING' },
+          worker_kind: { type: 'STRING' },
+          position: { type: 'STRING' },
+          start: { type: 'STRING' },
+          end: { type: 'STRING' },
+          name: { type: 'STRING' },
+        },
+        required: ['date', 'worker_kind', 'position', 'start', 'end', 'name'],
+      },
     },
-    warnings: {
-      type: 'ARRAY',
-      items: { type: 'STRING' },
-    },
+    warnings: { type: 'ARRAY', items: { type: 'STRING' } },
   },
   required: ['supported'],
 }
@@ -139,7 +170,7 @@ const RESPONSE_SCHEMA = {
 type GeminiResult = {
   supported: boolean
   reason?: string
-  rows?: string[][]
+  assignments?: unknown[]
   warnings?: string[]
 }
 
@@ -147,6 +178,7 @@ async function callGeminiOnce(
   apiKey: string,
   base64Data: string,
   mimeType: string,
+  prompt: string,
 ): Promise<GeminiResult> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`
 
@@ -165,7 +197,7 @@ async function callGeminiOnce(
       body: JSON.stringify({
         contents: [
           {
-            parts: [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: base64Data } }],
+            parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: base64Data } }],
           },
         ],
         generationConfig: {
@@ -192,11 +224,16 @@ async function callGeminiOnce(
   return JSON.parse(text) as GeminiResult
 }
 
-async function callGemini(apiKey: string, base64Data: string, mimeType: string): Promise<GeminiResult> {
+async function callGemini(
+  apiKey: string,
+  base64Data: string,
+  mimeType: string,
+  prompt: string,
+): Promise<GeminiResult> {
   let lastError: unknown
   for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
     try {
-      return await callGeminiOnce(apiKey, base64Data, mimeType)
+      return await callGeminiOnce(apiKey, base64Data, mimeType, prompt)
     } catch (error) {
       lastError = error
       console.error(
@@ -209,50 +246,31 @@ async function callGemini(apiKey: string, base64Data: string, mimeType: string):
 }
 
 /**
- * Splits one table cell's text into "HH:MM-HH:MM name" lines, the exact
- * format normalizeSchedule's CELL_ENTRY_PATTERN expects.
+ * Renders the caller-supplied position list into the prompt.
  *
- * Deliberately NOT a plain split on newlines. The prompt asks for one line
- * per worker, but models format the inside of a cell inconsistently: the
- * flash model returned "06:30-15:00 ניר כהן" (space) while the lite model
- * returns "06:30-15:00\nניר כהן" (newline between the time and the name).
- * Splitting on newlines turned every cell into a timeless name plus a
- * nameless time, neither of which matches the entry pattern — measured
- * against a real screenshot's output that produced 0 usable entries out of
- * 138. Anchoring on the time ranges instead and treating everything up to
- * the next time range as that entry's name yields 58/58 real data cells
- * parsed, and is immune to which separator the model happens to emit.
+ * The list comes from the client (src/lib/scheduleImport/positions.ts) so it
+ * has a single definition rather than being duplicated here, where an edge
+ * function cannot import from src/. Values are sanitized before being
+ * interpolated into the prompt: only a manager can reach this function and
+ * the content only shapes extraction of their own image, but text that goes
+ * into a prompt should never carry newlines that could restructure it.
  */
-const TIME_RANGE_PATTERN = /\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g
+function buildPositionsBlock(positions: unknown): string | null {
+  if (!positions || typeof positions !== 'object' || Array.isArray(positions)) return null
 
-function collapseWhitespace(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
-}
-
-function splitCellIntoEntries(cellText: string): string[] {
-  if (!cellText.trim()) return []
-
-  const starts: number[] = []
-  TIME_RANGE_PATTERN.lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = TIME_RANGE_PATTERN.exec(cellText)) !== null) {
-    starts.push(match.index)
+  const lines: string[] = []
+  for (const [workerKind, list] of Object.entries(positions as Record<string, unknown>)) {
+    if (!Array.isArray(list) || list.length === 0) return null
+    const clean = list
+      .filter((p): p is string => typeof p === 'string')
+      .map((p) => p.replace(/\s+/g, ' ').trim())
+      .filter((p) => p.length > 0 && p.length <= 60)
+    if (clean.length === 0) return null
+    const kind = String(workerKind).replace(/\s+/g, ' ').trim().slice(0, 40)
+    lines.push(`   - ${kind}: ${clean.map((p) => `"${p}"`).join(', ')}`)
   }
 
-  // No time range at all — a header/label cell. Keep it as a single line so
-  // normalizeSchedule can still read day headers and position labels off it.
-  if (starts.length === 0) {
-    const single = collapseWhitespace(cellText)
-    return single ? [single] : []
-  }
-
-  const entries: string[] = []
-  for (let i = 0; i < starts.length; i++) {
-    const end = i + 1 < starts.length ? starts[i + 1] : cellText.length
-    const entry = collapseWhitespace(cellText.slice(starts[i], end))
-    if (entry) entries.push(entry)
-  }
-  return entries
+  return lines.length > 0 ? lines.join('\n') : null
 }
 
 Deno.serve(async (req) => {
@@ -265,7 +283,7 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: auth.error }, auth.status)
   }
 
-  let body: { imageBase64?: unknown; mimeType?: unknown }
+  let body: { imageBase64?: unknown; mimeType?: unknown; positions?: unknown }
   try {
     body = await req.json()
   } catch {
@@ -278,6 +296,11 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'imageBase64 and mimeType are required' }, 400)
   }
 
+  const positionsBlock = buildPositionsBlock(body.positions)
+  if (!positionsBlock) {
+    return jsonResponse({ error: 'positions is required' }, 400)
+  }
+
   const { adminClient } = auth
   const { data: apiKey } = await adminClient.rpc('get_app_secret', { secret_name: 'gemini_api_key' })
   if (!apiKey) {
@@ -286,7 +309,12 @@ Deno.serve(async (req) => {
 
   let result: GeminiResult
   try {
-    result = await callGemini(apiKey, imageBase64, mimeType)
+    // Only a hint — the client re-derives the year deterministically from the
+    // day/month (normalizeExtracted.ts's anchorYear), because the source
+    // table's headers carry no year at all and the model otherwise guesses
+    // (it returned 2024 for a 2026 schedule).
+    const today = new Date().toISOString().slice(0, 10)
+    result = await callGemini(apiKey, imageBase64, mimeType, buildPrompt(positionsBlock, today))
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'AbortError'
     return jsonResponse(
@@ -300,28 +328,22 @@ Deno.serve(async (req) => {
     )
   }
 
-  if (!result.supported || !result.rows || result.rows.length === 0) {
+  if (!result.supported || !Array.isArray(result.assignments) || result.assignments.length === 0) {
     return jsonResponse(
-      { supported: false, reason: result.reason || 'לא זוהה טקסט קריא בתמונה.' },
+      { supported: false, reason: result.reason || 'לא זוהו שיבוצים בתמונה.' },
       200,
     )
   }
 
-  // `text` is collapsed to a single line because normalizeSchedule reads it
-  // directly for column 0 (the section/position label) and for the day
-  // headers — a label arriving as "בוקר מאבטח\nלובי תחתון" would otherwise
-  // carry a newline into shift_assignments.position, which is part of that
-  // table's uniqueness key.
-  const grid = {
-    rows: result.rows.map((row) =>
-      row.map((cellText) => ({
-        text: collapseWhitespace(cellText),
-        entries: splitCellIntoEntries(cellText),
-      })),
-    ),
-  }
+  // Field-level validation happens client-side (normalizeExtracted.ts), which
+  // owns the canonical position list and produces the Hebrew warnings shown in
+  // the preview. This only guarantees the shape is what the client expects.
+  const assignments = result.assignments.filter(
+    (a): a is Record<string, unknown> => !!a && typeof a === 'object' && !Array.isArray(a),
+  )
 
-  const warnings = (result.warnings ?? []).map((message) => ({ kind: 'low_confidence_ocr', message }))
-
-  return jsonResponse({ supported: true, grid, warnings }, 200)
+  return jsonResponse(
+    { supported: true, assignments, warnings: result.warnings ?? [] },
+    200,
+  )
 })

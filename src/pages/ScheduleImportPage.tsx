@@ -3,9 +3,17 @@ import { detectFileKind } from '../lib/scheduleImport/detectFileKind'
 import { parseExcelSchedule } from '../lib/scheduleImport/parseExcelSchedule'
 import { parseImageSchedule } from '../lib/scheduleImport/parseImageSchedule'
 import { normalizeSchedule } from '../lib/scheduleImport/normalizeSchedule'
+import {
+  normalizeExtractedAssignments,
+  type NormalizeExtractedResult,
+} from '../lib/scheduleImport/normalizeExtracted'
 import { matchNames } from '../lib/scheduleImport/matchNames'
 import { validateSchedule, type ExistingAssignmentSummary } from '../lib/scheduleImport/validateSchedule'
-import type { MatchedAssignment, ValidationWarning } from '../lib/scheduleImport/types'
+import type {
+  MatchedAssignment,
+  NormalizedAssignment,
+  ValidationWarning,
+} from '../lib/scheduleImport/types'
 import {
   computeContentHash,
   createScheduleImport,
@@ -67,6 +75,7 @@ export function ScheduleImportPage() {
   const [stats, setStats] = useState({ imported: 0, skipped: 0, unmatched_names: 0 })
   const [pendingImages, setPendingImages] = useState<File[]>([])
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null)
+  const [coverage, setCoverage] = useState<NormalizeExtractedResult['coverage'] | null>(null)
 
   const profilesQuery = useProfiles()
 
@@ -86,21 +95,25 @@ export function ScheduleImportPage() {
     return null
   }
 
-  // Shared by both the Excel and image paths once each has produced a
-  // RawGrid: normalize -> match -> validate -> create the schedule_imports
-  // row -> upload the source file(s) -> move to preview. `parseWarnings`
-  // (e.g. low_confidence_ocr from the image path) are merged into
-  // validateSchedule's own warnings — never dropped.
+  // Shared by both the Excel and image paths once each has produced
+  // normalized assignments: match -> validate -> create the schedule_imports
+  // row -> upload the source file(s) -> move to preview. The two paths reach
+  // this point differently on purpose — Excel really is a grid, so it goes
+  // through normalizeSchedule, while the image path gets structured records
+  // straight from the model and skips grid re-parsing entirely (see
+  // normalizeExtracted.ts). `parseWarnings` (unreadable rows, unknown
+  // positions, a cropped screenshot) are merged into validateSchedule's own
+  // warnings — never dropped.
   async function finishImport(
-    grid: Parameters<typeof normalizeSchedule>[0],
+    normalized: NormalizedAssignment[],
     sourceKind: 'excel' | 'image',
     files: File[],
     contentHashBytes: Uint8Array,
     parseWarnings: ValidationWarning[],
     currentUserId: string,
+    coverageInfo: NormalizeExtractedResult['coverage'] | null,
   ) {
     const weekStart = getPreviousSunday(new Date())
-    const { assignments: normalized } = normalizeSchedule(grid, weekStart)
 
     const profiles = (profilesQuery.data ?? []).map((p) => ({ id: p.id, full_name: p.full_name }))
     const matched = matchNames(normalized, profiles)
@@ -150,6 +163,7 @@ export function ScheduleImportPage() {
     setConflicts(validated.conflicts)
     setDetectedWeekStart(weekStartIso)
     setStats(validated.stats)
+    setCoverage(coverageInfo)
     setStep('preview')
   }
 
@@ -176,7 +190,8 @@ export function ScheduleImportPage() {
       }
 
       const grid = parseExcelSchedule(bytes, kind)
-      await finishImport(grid, 'excel', [file], bytes, [], user!.id)
+      const { assignments: normalized } = normalizeSchedule(grid, getPreviousSunday(new Date()))
+      await finishImport(normalized, 'excel', [file], bytes, [], user!.id, null)
     } catch (error) {
       setErrorMessage(getReadableError(error))
       setStep('error')
@@ -215,8 +230,21 @@ export function ScheduleImportPage() {
         throw new Error(result.reason)
       }
 
+      // Validate the model's records and build assignments directly — no grid
+      // re-parsing step. Rejected rows become warnings naming the offending
+      // row rather than vanishing into a shorter list.
+      const normalized = normalizeExtractedAssignments(result.assignments, new Date())
+
       const combinedBytes = await concatBytes(pendingImages)
-      await finishImport(result.grid, 'image', pendingImages, combinedBytes, result.warnings ?? [], user!.id)
+      await finishImport(
+        normalized.assignments,
+        'image',
+        pendingImages,
+        combinedBytes,
+        [...result.warnings, ...normalized.warnings],
+        user!.id,
+        normalized.coverage,
+      )
       setPendingImages([])
     } catch (error) {
       setErrorMessage(getReadableError(error))
@@ -327,8 +355,44 @@ export function ScheduleImportPage() {
       conflicts={conflicts}
       detectedWeekStart={detectedWeekStart}
       stats={stats}
+      coverage={coverage}
       onCancel={() => setStep('upload')}
     />
+  )
+}
+
+/**
+ * Shows how much of the expected week actually came through. A partial or
+ * cropped screenshot previously surfaced only as a quietly shorter list —
+ * indistinguishable from a light week — so an incomplete import could be
+ * published without anyone noticing what was missing.
+ */
+function CoverageReport({ coverage }: { coverage: NormalizeExtractedResult['coverage'] }) {
+  const complete = coverage.positionsMissing.length === 0 && coverage.datesFound.length === 7
+  const totalPositions = coverage.positionsFound.length + coverage.positionsMissing.length
+
+  return (
+    <div
+      className={`p-3 rounded mb-4 ${complete ? 'bg-green-50 text-green-900' : 'bg-amber-50 text-amber-900'}`}
+    >
+      <p className="font-bold mb-1">
+        {complete ? 'הטבלה נקראה במלואה' : 'ייתכן שחלק מהטבלה חסר'}
+      </p>
+      <p className="text-sm">
+        ימים: {coverage.datesFound.length} מתוך 7 · עמדות: {coverage.positionsFound.length} מתוך{' '}
+        {totalPositions}
+      </p>
+      {coverage.positionsMissing.length > 0 && (
+        <p className="text-sm mt-1">
+          עמדות שלא נמצאו: {coverage.positionsMissing.map((p) => `${p.position} (${p.worker_kind})`).join(' · ')}
+        </p>
+      )}
+      {!complete && (
+        <p className="text-sm mt-1">
+          אם חסרות שורות — ייתכן שהצילום חתוך. אפשר לבטל ולהעלות צילום מלא, או להעלות כמה תמונות יחד.
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -343,6 +407,7 @@ function SchedulePreview({
   conflicts,
   detectedWeekStart,
   stats,
+  coverage,
   onCancel,
 }: {
   importId: string
@@ -351,6 +416,7 @@ function SchedulePreview({
   conflicts: MatchedAssignment[]
   detectedWeekStart: string | null
   stats: { imported: number; skipped: number; unmatched_names: number }
+  coverage: NormalizeExtractedResult['coverage'] | null
   onCancel: () => void
 }) {
   const [assignments, setAssignments] = useState(initialAssignments)
@@ -445,6 +511,8 @@ function SchedulePreview({
       <p className="mb-4">
         ייקלטו: {stats.imported} · דולגו: {stats.skipped} · שמות שלא זוהו: {stats.unmatched_names}
       </p>
+
+      {coverage && <CoverageReport coverage={coverage} />}
 
       {warnings.length > 0 && (
         <ul className="bg-yellow-50 text-yellow-900 p-3 rounded mb-4">
