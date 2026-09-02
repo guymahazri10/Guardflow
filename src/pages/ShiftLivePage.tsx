@@ -14,6 +14,7 @@ import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
 import { useAuth } from '../contexts/AuthContext'
 import { AssignmentSwapModal } from '../components/AssignmentSwapModal'
+import { getImportPositionForSlot } from '../lib/scheduleImport/liveBoardPositions'
 
 /** Shared "dated assignment vs legacy roster name" state, threaded from the
  *  page root down into NowTab/AllShiftTab so both tabs share one query. */
@@ -196,7 +197,13 @@ function NowTab({
             role={role}
             guardName={datedOrLegacyName({
               legacyName: board.guard_names?.[role]?.name ?? null,
-              position: role,
+              // The live board's own columns are guard SLOTS ("מאבטח 3"),
+              // not physical positions — see liveBoardPositions.ts for why
+              // they can't just be renamed. Translate slot -> imported
+              // position before matching; an unrecognized slot maps to
+              // itself, which simply never matches anything (same as the
+              // legacy fallback below when there's no dated row at all).
+              position: getImportPositionForSlot(board.shift_type, role) ?? role,
               ...datedCtx,
             })}
             task={currentBlock.cells?.[role]}
@@ -255,7 +262,7 @@ function AllShiftTab({
                   role={role}
                   guardName={datedOrLegacyName({
                     legacyName: board.guard_names?.[role]?.name ?? null,
-                    position: role,
+                    position: getImportPositionForSlot(board.shift_type, role) ?? role,
                     ...datedCtx,
                   })}
                   task={row.cells?.[role]}

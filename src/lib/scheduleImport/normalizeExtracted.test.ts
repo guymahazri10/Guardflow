@@ -5,7 +5,7 @@ function record(overrides: Partial<ExtractedAssignment> = {}): ExtractedAssignme
   return {
     date: '2026-08-30',
     worker_kind: 'אחמ"ש',
-    position: 'אחמ"ש בוקר',
+    position: 'אחמ"ש',
     start: '06:30',
     end: '15:00',
     name: 'ניר כהן',
@@ -24,7 +24,7 @@ describe('normalizeExtractedAssignments', () => {
     expect(assignments[0]).toMatchObject({
       work_date: '2026-08-30',
       worker_kind: 'אחמ"ש',
-      position: 'אחמ"ש בוקר',
+      position: 'אחמ"ש',
       shift_category: 'morning',
       slot_index: 0,
       source_name: 'ניר כהן',
@@ -36,7 +36,7 @@ describe('normalizeExtractedAssignments', () => {
 
   it('rolls a night shift end past midnight but keeps the start date as work_date', () => {
     const { assignments } = normalizeExtractedAssignments([
-      record({ position: 'אחמ"ש לילה', start: '22:30', end: '07:00' }),
+      record({ position: 'אחמ"ש', start: '22:30', end: '07:00' }),
     ], REFERENCE)
     expect(assignments[0].shift_category).toBe('night')
     expect(assignments[0].work_date).toBe('2026-08-30')
@@ -79,7 +79,7 @@ describe('normalizeExtractedAssignments', () => {
   it('reads exceptional hours as given rather than defaulting to the row', () => {
     const { assignments } = normalizeExtractedAssignments([
       record({ start: '06:30', end: '19:00' }),
-      record({ position: 'אחמ"ש צהריים', start: '14:45', end: '18:30' }),
+      record({ position: 'אחמ"ש', start: '14:45', end: '18:30' }),
     ], REFERENCE)
     expect(assignments[0].ends_at).toBe('2026-08-30T16:00:00.000Z') // 19:00 local
     expect(assignments[1].shift_category).toBe('afternoon')
@@ -140,7 +140,7 @@ describe('normalizeExtractedAssignments', () => {
     const { assignments } = normalizeExtractedAssignments(
       [
         record({ date: '2020-12-31' }), // stays in 2026
-        record({ date: '2020-01-02', position: 'אחמ"ש צהריים', start: '14:30', end: '23:00' }), // rolls to 2027
+        record({ date: '2020-01-02', position: 'אחמ"ש', start: '14:30', end: '23:00' }), // rolls to 2027
       ],
       newYearReference,
     )
@@ -161,7 +161,7 @@ describe('normalizeExtractedAssignments', () => {
       ], REFERENCE)
       expect(coverage.datesFound).toEqual(['2026-08-30', '2026-08-31'])
       expect(coverage.positionsFound).toEqual([
-        { worker_kind: 'אחמ"ש', position: 'אחמ"ש בוקר', days: 2 },
+        { worker_kind: 'אחמ"ש', position: 'אחמ"ש', days: 2 },
       ])
       // Everything else in the canonical list is reported as missing.
       expect(coverage.positionsMissing.length).toBeGreaterThan(0)

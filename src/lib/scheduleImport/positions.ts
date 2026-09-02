@@ -21,13 +21,30 @@ import type { WorkerKind } from './types'
  *
  * The same label can legitimately appear under two shifts (AB runs both
  * morning and afternoon); shift_category keeps those rows distinct, so the
- * label itself doesn't need the shift baked into it.
+ * label itself doesn't need the shift baked into it. This is also why
+ * "אחמ"ש" has a single bare entry rather than "אחמ"ש בוקר"/"אחמ"ש צהריים"/
+ * "אחמ"ש לילה" — the shift period is already captured by shift_category,
+ * baking it into the position too was pure redundancy, and it broke the
+ * live board's lookup: the live board's dated-assignment matching
+ * (liveBoardPositions.ts) needs one stable "אחמ"ש" position that exists
+ * regardless of which shift's board is asking.
+ *
+ * The מאבטח list (לובי עליון/לובי תחתון/AB/CD/EFG/רכוב) is the union across
+ * all three shift periods — a given shift only ever fills some of them
+ * (night fills just the two לובי positions, afternoon skips לובי, morning
+ * fills all six) — and is exactly the same list liveBoardPositions.ts maps
+ * live-board guard slots onto, so a position extracted from an image and a
+ * position looked up from the live board always compare as equal strings.
+ * "חמוש" (armed) is a per-shift note on a slot, not part of a position's own
+ * identity — לובי עליון is the same physical post whether or not that
+ * shift's assignment happens to be armed — so it's dropped from the label
+ * entirely rather than kept as "לובי עליון - חמוש".
  *
  * בקרה is intentionally absent — that section is never imported.
  */
 export const CANONICAL_POSITIONS: Record<WorkerKind, string[]> = {
-  'אחמ"ש': ['אחמ"ש בוקר', 'אחמ"ש צהריים', 'אחמ"ש לילה'],
-  מאבטח: ['לובי עליון - חמוש', 'לובי תחתון', 'AB', 'CD', 'EFG', 'רכוב', 'לילה'],
+  'אחמ"ש': ['אחמ"ש'],
+  מאבטח: ['לובי עליון', 'לובי תחתון', 'AB', 'CD', 'EFG', 'רכוב'],
 }
 
 export function isKnownPosition(workerKind: WorkerKind, position: string): boolean {
