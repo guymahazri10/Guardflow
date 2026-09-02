@@ -59,15 +59,30 @@ async function requireManager(req: Request): Promise<ManagerCheckResult> {
   return { ok: true, caller, adminClient }
 }
 
-// Pinned to a specific model id rather than an alias like "gemini-flash-
-// latest": that alias 503'd repeatedly in manual testing while the pinned
-// id responded normally, and a pinned id fails predictably (loud 404) if
-// Google retires it, rather than silently drifting behavior. Verified
-// directly against the Gemini API on 2026-09-01 — "gemini-2.0-flash" (the
-// model this function originally shipped with) no longer exists, and
-// "gemini-2.5-flash" now 404s with "no longer available to new users" for
-// this API key. Revisit this constant if requests start failing again.
-const GEMINI_MODEL = 'gemini-3.6-flash'
+// A *lite* model, chosen on measured latency, not capability guesswork. The
+// full "gemini-3.6-flash" is a thinking model: timed against the real
+// mishmarot.co.il screenshot it burned 5058 thinking tokens to produce 1372
+// tokens of answer and took 211 SECONDS — far past the edge runtime's
+// wall-clock limit, so the worker was killed mid-flight (observed live as an
+// "EarlyDrop" shutdown ~75s in, and surfaced to the manager as the useless
+// "Edge Function returned a non-2xx status code"). The lite model returned
+// equal-or-better extraction on the same image in 5.6s.
+//
+// An alias rather than a pinned id, deliberately: two pinned ids have
+// already been retired out from under this function ("gemini-2.0-flash" is
+// gone, "gemini-2.5-flash" now 404s as "no longer available to new users"),
+// and a hard 404 in an app nobody is monitoring is worse than the alias's
+// risk of behavior drift — the cell parsing below is written to absorb that
+// drift rather than depend on one model's exact output formatting.
+const GEMINI_MODEL = 'gemini-flash-lite-latest'
+
+// Latency is unstable even on the lite model: the same image measured 5.6s,
+// 6.2s, 42.3s and 75.7s across runs. Rather than let a slow roll of the dice
+// get the whole worker killed (which loses the request with no usable error),
+// bound each attempt and retry once — a retry usually lands in the fast case.
+// Worst case stays comfortably under the wall-clock limit that killed us.
+const GEMINI_TIMEOUT_MS = 25_000
+const GEMINI_MAX_ATTEMPTS = 2
 
 // Kept in close sync with the section/entry conventions
 // src/lib/scheduleImport/normalizeSchedule.ts expects: row[0] is the label
@@ -89,8 +104,10 @@ const PROMPT = `אתה מנתח טבלת סידור עבודה שבועי מצי
    הבאים הם תאריכי הימים כפי שמופיעים בתמונה (למשל "06/09" או שם יום בעברית).
 3. שורת כותרת סעיף (אחמ"ש / מאבטח) — התא הראשון מכיל את שם הסעיף, וכל שאר
    התאים בשורה ריקים ("").
-4. שורת עמדה — התא הראשון הוא שם העמדה/תפקיד כפי שכתוב בתמונה. שאר התאים
-   הם התוכן בפועל של אותו יום עבור אותה עמדה.
+4. שורת עמדה — התא הראשון הוא שם העמדה/התפקיד בלבד, ללא שעות וללא תאריכים.
+   לדוגמה: "לובי תחתון", "AB", "רכוב בוקר", "אחמ"ש בוקר". אם בתמונה מופיעות
+   שעות לצד שם העמדה — השמט אותן משם העמדה. שאר התאים בשורה הם התוכן בפועל
+   של אותו יום עבור אותה עמדה.
 5. בכל תא נתונים, קרא את השעות בפועל כפי שמופיעות בתמונה (לא ברירת מחדל לפי
    קטגוריה) והחזר כל שיבוץ כשורת טקסט בפורמט המדויק: "HH:MM-HH:MM שם_עובד".
    אם יש כמה עובדים באותו תא (כמה משמרות/עמדות משנה), החזר כמה שורות בתוך
@@ -126,24 +143,40 @@ type GeminiResult = {
   warnings?: string[]
 }
 
-async function callGemini(apiKey: string, base64Data: string, mimeType: string): Promise<GeminiResult> {
+async function callGeminiOnce(
+  apiKey: string,
+  base64Data: string,
+  mimeType: string,
+): Promise<GeminiResult> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: base64Data } }],
+  // Deno's fetch has no built-in timeout — without this the request can hang
+  // long enough for the platform to kill the whole worker, which loses the
+  // response entirely instead of producing an error we can report.
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), GEMINI_TIMEOUT_MS)
+
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: abort.signal,
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: base64Data } }],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: RESPONSE_SCHEMA,
         },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
-      },
-    }),
-  })
+      }),
+    })
+  } finally {
+    clearTimeout(timer)
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => '')
@@ -157,6 +190,69 @@ async function callGemini(apiKey: string, base64Data: string, mimeType: string):
   }
 
   return JSON.parse(text) as GeminiResult
+}
+
+async function callGemini(apiKey: string, base64Data: string, mimeType: string): Promise<GeminiResult> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await callGeminiOnce(apiKey, base64Data, mimeType)
+    } catch (error) {
+      lastError = error
+      console.error(
+        `parse-schedule-image: Gemini attempt ${attempt}/${GEMINI_MAX_ATTEMPTS} failed:`,
+        error instanceof Error ? error.message : error,
+      )
+    }
+  }
+  throw lastError
+}
+
+/**
+ * Splits one table cell's text into "HH:MM-HH:MM name" lines, the exact
+ * format normalizeSchedule's CELL_ENTRY_PATTERN expects.
+ *
+ * Deliberately NOT a plain split on newlines. The prompt asks for one line
+ * per worker, but models format the inside of a cell inconsistently: the
+ * flash model returned "06:30-15:00 ניר כהן" (space) while the lite model
+ * returns "06:30-15:00\nניר כהן" (newline between the time and the name).
+ * Splitting on newlines turned every cell into a timeless name plus a
+ * nameless time, neither of which matches the entry pattern — measured
+ * against a real screenshot's output that produced 0 usable entries out of
+ * 138. Anchoring on the time ranges instead and treating everything up to
+ * the next time range as that entry's name yields 58/58 real data cells
+ * parsed, and is immune to which separator the model happens to emit.
+ */
+const TIME_RANGE_PATTERN = /\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/g
+
+function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function splitCellIntoEntries(cellText: string): string[] {
+  if (!cellText.trim()) return []
+
+  const starts: number[] = []
+  TIME_RANGE_PATTERN.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = TIME_RANGE_PATTERN.exec(cellText)) !== null) {
+    starts.push(match.index)
+  }
+
+  // No time range at all — a header/label cell. Keep it as a single line so
+  // normalizeSchedule can still read day headers and position labels off it.
+  if (starts.length === 0) {
+    const single = collapseWhitespace(cellText)
+    return single ? [single] : []
+  }
+
+  const entries: string[] = []
+  for (let i = 0; i < starts.length; i++) {
+    const end = i + 1 < starts.length ? starts[i + 1] : cellText.length
+    const entry = collapseWhitespace(cellText.slice(starts[i], end))
+    if (entry) entries.push(entry)
+  }
+  return entries
 }
 
 Deno.serve(async (req) => {
@@ -192,9 +288,14 @@ Deno.serve(async (req) => {
   try {
     result = await callGemini(apiKey, imageBase64, mimeType)
   } catch (error) {
-    console.error('parse-schedule-image: Gemini call failed:', error instanceof Error ? error.message : error)
+    const timedOut = error instanceof Error && error.name === 'AbortError'
     return jsonResponse(
-      { supported: false, reason: 'קריאת התמונה נכשלה. נסה שוב, או השתמש בקובץ Excel אם זמין.' },
+      {
+        supported: false,
+        reason: timedOut
+          ? 'שירות קריאת התמונה איטי כרגע ולא הספיק להשיב. נסה שוב בעוד רגע.'
+          : 'קריאת התמונה נכשלה. נסה שוב, או השתמש בקובץ Excel אם זמין.',
+      },
       200,
     )
   }
@@ -206,14 +307,16 @@ Deno.serve(async (req) => {
     )
   }
 
+  // `text` is collapsed to a single line because normalizeSchedule reads it
+  // directly for column 0 (the section/position label) and for the day
+  // headers — a label arriving as "בוקר מאבטח\nלובי תחתון" would otherwise
+  // carry a newline into shift_assignments.position, which is part of that
+  // table's uniqueness key.
   const grid = {
     rows: result.rows.map((row) =>
       row.map((cellText) => ({
-        text: cellText,
-        entries: cellText
-          .split('\n')
-          .map((line) => line.trim())
-          .filter((line) => line.length > 0),
+        text: collapseWhitespace(cellText),
+        entries: splitCellIntoEntries(cellText),
       })),
     ),
   }

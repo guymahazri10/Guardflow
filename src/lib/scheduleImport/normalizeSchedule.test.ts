@@ -181,6 +181,56 @@ describe('normalizeSchedule', () => {
     expect(categoryOf('ד')).toBe('night')
   })
 
+  // Regression: the real source system writes header dates with a BACKSLASH
+  // ("30\8"), and abbreviates the day to a single letter + geresh ("א׳"),
+  // not the full name. HEADER_DATE_PATTERN accepted only "." and "/", and the
+  // day fallback only matched full names — so every column resolved to no
+  // date and normalizeSchedule skipped every cell. A screenshot the model
+  // read perfectly still yielded 0 assignments.
+  it('parses real header cells that use a backslash date separator', () => {
+    const grid: RawGrid = {
+      rows: [
+        [cell('משמרות'), cell("א' 30\\8"), cell("ב' 31\\8")],
+        [cell('אחמ"ש')],
+        [cell('אחמ"ש בוקר'), cell('06:30-15:00 ניר כהן'), cell('06:30-15:00 רן ברגרפרוינד')],
+      ],
+    }
+    const { assignments } = normalizeSchedule(grid, new Date('2026-08-30T00:00:00.000Z'))
+    expect(assignments).toHaveLength(2)
+    expect(assignments[0].work_date).toBe('2026-08-30')
+    expect(assignments[1].work_date).toBe('2026-08-31')
+  })
+
+  it('falls back to a single-letter day abbreviation when no date is readable', () => {
+    const grid: RawGrid = {
+      rows: [
+        // No numeric date at all in these headers — only the abbreviation.
+        [cell('משמרות'), cell("א'"), cell("ג׳")],
+        [cell('אחמ"ש')],
+        [cell('אחמ"ש בוקר'), cell('06:30-15:00 בדיקה־א׳'), cell('06:30-15:00 בדיקה־ב׳')],
+      ],
+    }
+    const { assignments } = normalizeSchedule(grid, weekStart)
+    expect(assignments).toHaveLength(2)
+    expect(assignments[0].work_date).toBe('2026-09-06') // Sunday = א
+    expect(assignments[1].work_date).toBe('2026-09-08') // Tuesday = ג
+  })
+
+  it('does not mistake ordinary label text for a day abbreviation', () => {
+    // "משמרות" contains both ו and ש; a naive single-letter match would give
+    // column 0 a date and turn the position-label column into a day column.
+    const grid: RawGrid = {
+      rows: [
+        [cell('משמרות'), cell("א' 30\\8")],
+        [cell('אחמ"ש')],
+        [cell('אחמ"ש בוקר'), cell('06:30-15:00 בדיקה־א׳')],
+      ],
+    }
+    const { assignments } = normalizeSchedule(grid, new Date('2026-08-30T00:00:00.000Z'))
+    expect(assignments).toHaveLength(1)
+    expect(assignments[0].position).toBe('אחמ"ש בוקר')
+  })
+
   it('handles names with quotes, apostrophes, and extra spaces without corrupting them', () => {
     const grid: RawGrid = {
       rows: [

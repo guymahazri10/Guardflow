@@ -25,6 +25,13 @@ const EXCLUDED_SECTION_LABELS = new Set([
 
 const HEBREW_DAY_NAMES = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת']
 
+// Headers in the real source system abbreviate the day to a single letter
+// plus a geresh ("א׳ 30\8"), not the full name. Matched only when followed by
+// an apostrophe/geresh: a bare `includes` on single Hebrew letters would
+// false-match ordinary words — "משמרות", the label of column 0, contains both
+// ו and ש — and silently assign column 0 a date.
+const HEBREW_DAY_ABBREVIATION_PATTERN = /(?:^|\s)([אבגדהוש])['׳]/
+
 const CELL_ENTRY_PATTERN = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s+(.+)$/
 
 function normalizeSectionLabel(text: string): string {
@@ -54,7 +61,12 @@ function isSectionRow(row: { text: string }[]): boolean {
 // the day-of-week name only tells us an offset from whatever `weekStart` the
 // caller happened to pass in (see Important #4: the caller no longer has to
 // know the real week in advance).
-const HEADER_DATE_PATTERN = /(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?/
+// The separator class includes a backslash because that is what the real
+// source system actually emits — its headers read "30\8", not "30/8" or
+// "30.8". Without it every column's date failed to parse, parseHeaderDate
+// returned null for all of them, and normalizeSchedule skipped every single
+// cell — an import that read the table perfectly still produced 0 rows.
+const HEADER_DATE_PATTERN = /(\d{1,2})[./\\](\d{1,2})(?:[./\\](\d{2,4}))?/
 
 function parseHeaderDate(rawHeader: string, weekStart: Date): Date | null {
   const dateMatch = HEADER_DATE_PATTERN.exec(rawHeader)
@@ -82,7 +94,13 @@ function parseHeaderDate(rawHeader: string, weekStart: Date): Date | null {
     }
   }
 
-  const dayIndex = HEBREW_DAY_NAMES.findIndex((name) => rawHeader.includes(name))
+  let dayIndex = HEBREW_DAY_NAMES.findIndex((name) => rawHeader.includes(name))
+  if (dayIndex === -1) {
+    const abbreviation = HEBREW_DAY_ABBREVIATION_PATTERN.exec(rawHeader)
+    if (abbreviation) {
+      dayIndex = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'].indexOf(abbreviation[1])
+    }
+  }
   if (dayIndex === -1) return null
   const date = new Date(weekStart)
   date.setUTCDate(date.getUTCDate() + dayIndex)
