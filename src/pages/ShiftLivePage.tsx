@@ -6,7 +6,7 @@ import GuardCard from '../components/ui/GuardCard'
 import { NotificationBell } from '../components/ui/NotificationBell'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, type ShiftCategory } from '../constants/shifts'
-import { toLocalDateIso, addDaysIso } from '../lib/israelTime'
+import { toLocalDateIso, addDaysIso, formatIsraelDateLabel } from '../lib/israelTime'
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
@@ -114,6 +114,12 @@ export function ShiftLivePage() {
         <p className="text-[52px] font-black leading-none tracking-tight text-text-primary tabular-nums">
           {formatHHMM(now)}
         </p>
+        {/* The displayed date follows lookupWorkDate, not calendar-today: during
+            the early-morning hours of an ongoing night shift the active shift's
+            own date is still "yesterday" even though the wall clock has already
+            rolled over — showing the shift's real date avoids the mismatch of
+            e.g. "03:00 Tuesday" while the night shift on screen is Monday's. */}
+        <p className="text-xs text-text-secondary mt-1">{formatIsraelDateLabel(lookupWorkDate)}</p>
         <div className="flex items-center gap-1.5 mt-2.5">
           <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
           <span className="text-xs font-bold text-primary tracking-wide">
@@ -314,11 +320,20 @@ function datedOrLegacyName({
   const plannedLabel = dated.source_name ?? '—'
   const actualLabel = dated.actual_name ?? plannedLabel
 
-  const content = (
-    <div>
-      <div>תוכנן: {plannedLabel}</div>
-      {dated.is_manually_edited && <div>בפועל: {actualLabel}</div>}
-    </div>
+  // GuardCard renders this inside a single-line `truncate` span, so this has
+  // to stay one inline unit rather than stacked block lines — the previous
+  // two-<div> version ("תוכנן: X" / "בפועל: Y") both fought that layout and,
+  // per explicit request, needlessly prefixed the common case (no swap yet)
+  // with a "planned:" label nobody needed to see. When there's been a swap,
+  // the name that's actually on shift is shown as the primary text, with a
+  // small "בפועל" marker rather than a second line — the swap history itself
+  // is already in staffing_change_log for anyone auditing.
+  const content = dated.is_manually_edited ? (
+    <span>
+      {actualLabel} <span className="text-text-muted font-medium text-[11px]">בפועל</span>
+    </span>
+  ) : (
+    plannedLabel
   )
 
   if (!canSwap) return content

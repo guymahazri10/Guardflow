@@ -12,10 +12,14 @@ import {
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { useRosterBoardsByShiftId, useUpdateGuardNames } from '../hooks/useRosterBoards'
 import { useProfiles } from '../hooks/useProfiles'
+import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import type { ProfileListItem } from '../lib/profiles'
 import type { GuardAssignment, RosterBoard } from '../lib/rosterBoards'
 import GuardNameInput from '../components/ui/GuardNameInput'
 import { ClipboardIcon } from '../components/ui/StateIcon'
+import { toLocalDateIso, addDaysIso } from '../lib/israelTime'
+import { fetchShiftAssignmentsForWeek, callReplaceAssignmentWorker } from '../lib/scheduleImports'
+import { getImportPositionForSlot } from '../lib/scheduleImport/liveBoardPositions'
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
@@ -26,12 +30,78 @@ function pickBoardToEdit(boards: RosterBoard[]): RosterBoard | null {
   return sorted.find((board) => board.published) ?? sorted[0]
 }
 
+/**
+ * Propagates guard-name edits made here to today's published dated
+ * assignment, when one exists for that slot.
+ *
+ * Without this, saving here was silently invisible on the live screen for
+ * any slot that has an imported assignment: ShiftLivePage always prefers a
+ * matching shift_assignments row over roster_boards.guard_names when one
+ * exists (that's the whole point of the "planned" overlay), so an edit here
+ * would report "נשמר בהצלחה!" — genuinely saved to the database — and then
+ * simply never appear anywhere, because nothing was reading guard_names for
+ * that slot any more. Reported live: "אני בשיבוץ מתקן את הסידור זה לא נשמר
+ * כמו שצריך ומתעדכן לפי השינוי שאני פרסמתי."
+ *
+ * Only diffs against the board's own last-known state, so an unrelated,
+ * untouched slot doesn't generate a spurious staffing_change_log entry every
+ * time the manager saves. Only called for a full מנהל — replace_assignment_
+ * worker restricts an אחמ"ש caller to an assignment currently in progress,
+ * and this bulk-edit screen has no notion of "which slot is live right now"
+ * the way the dedicated swap modal on ShiftLivePage does; that swap flow is
+ * still the correct path for a commander's same-shift correction.
+ */
+async function propagateGuardNamesToDatedAssignments(
+  board: RosterBoard,
+  guardNames: Record<string, GuardAssignment>,
+): Promise<void> {
+  const changedRoles = Object.keys(guardNames).filter((role) => {
+    const before = board.guard_names[role]
+    const after = guardNames[role]
+    return (before?.name ?? '') !== (after?.name ?? '') || (before?.user_id ?? null) !== (after?.user_id ?? null)
+  })
+  if (changedRoles.length === 0) return
+
+  // Same night-rollover convention as ShiftLivePage's lookupWorkDate: a
+  // night shift stays filed under the day it started, even after local
+  // midnight has advanced the wall-clock date.
+  const now = new Date()
+  const todayIso = toLocalDateIso(now)
+  const workDate =
+    board.shift_type === 'night' && now.getHours() < SHIFT_CATEGORIES.night.endHour
+      ? addDaysIso(todayIso, -1)
+      : todayIso
+
+  const weekStart = new Date(now)
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+  const assignments = await fetchShiftAssignmentsForWeek(toLocalDateIso(weekStart))
+
+  for (const role of changedRoles) {
+    const position = getImportPositionForSlot(board.shift_type, role)
+    if (!position) continue
+
+    const match = assignments.find(
+      (a) => a.work_date === workDate && a.shift_category === board.shift_type && a.position === position && a.published,
+    )
+    if (!match) continue
+
+    const assignment = guardNames[role] ?? { name: '', user_id: null }
+    await callReplaceAssignmentWorker({
+      assignmentId: match.id,
+      newUserId: assignment.user_id,
+      newName: assignment.name,
+      reason: 'עדכון ידני דרך מסך שיבוץ',
+    })
+  }
+}
+
 /* ─── Main component ──────────────────────────────────────────── */
 
 export function ShiftSetupPage() {
   const { isAdmin, isCommander } = useAuth()
   const canEdit = isAdmin || isCommander
   const navigate = useNavigate()
+  const scheduleImportFlag = useFeatureFlag('weekly_schedule_import')
 
   const shiftTypesQuery = useShiftTypes()
   const allShifts = shiftTypesQuery.data ?? []
@@ -100,11 +170,31 @@ export function ShiftSetupPage() {
 
     try {
       await updateGuardNamesMutation.mutateAsync({ id: board.id, guardNames })
-      toast.success('נשמר בהצלחה!')
-      navigate('/shift-live')
     } catch {
       toast.error('שגיאה בשמירה — נסה שוב')
+      return
     }
+
+    // Only a מנהל propagates to today's dated assignment — see
+    // propagateGuardNamesToDatedAssignments for why. A failure here doesn't
+    // roll back the guard_names save above (that part genuinely succeeded);
+    // it only means today's live screen may still show the old value.
+    let propagateFailed = false
+    if (isAdmin && scheduleImportFlag.enabled) {
+      try {
+        await propagateGuardNamesToDatedAssignments(board, guardNames)
+      } catch (err) {
+        console.error('Failed to propagate guard names to dated assignments', err)
+        propagateFailed = true
+      }
+    }
+
+    if (propagateFailed) {
+      toast.error('הלוח נשמר, אך עדכון התצוגה החיה נכשל — בדוק שוב במסך שידור חי.')
+    } else {
+      toast.success('נשמר בהצלחה!')
+    }
+    navigate('/shift-live')
   }
 
   // ── Derived ──

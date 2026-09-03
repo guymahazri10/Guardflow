@@ -112,3 +112,23 @@ export function addDaysIso(dateIso: string, days: number): string {
   d.setDate(d.getDate() + days)
   return toLocalDateIso(d)
 }
+
+const dateLabelFormatter = new Intl.DateTimeFormat('he-IL', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  timeZone: 'UTC',
+})
+
+/**
+ * Formats a YYYY-MM-DD calendar date as a Hebrew day+date label (e.g.
+ * "יום שלישי, 3 בספטמבר"). Anchored to UTC noon-equivalent via Date.UTC and
+ * formatted with timeZone: 'UTC' so the Y/M/D digits are read back exactly
+ * as given — this is calendar-date formatting, not an instant that needs
+ * Israel-local conversion (unlike utcIsoToIsraelHHMM above, which formats a
+ * real timestamp).
+ */
+export function formatIsraelDateLabel(dateIso: string): string {
+  const [year, month, day] = dateIso.split('-').map(Number)
+  return dateLabelFormatter.format(new Date(Date.UTC(year, month - 1, day)))
+}
