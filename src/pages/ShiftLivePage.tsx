@@ -6,7 +6,8 @@ import GuardCard from '../components/ui/GuardCard'
 import { NotificationBell } from '../components/ui/NotificationBell'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, type ShiftCategory } from '../constants/shifts'
-import { toLocalDateIso, addDaysIso, formatIsraelDateLabel } from '../lib/israelTime'
+import { toLocalDateIso, formatIsraelDateLabel } from '../lib/israelTime'
+import { workDateForCategory, weekStartIsoFor } from '../lib/scheduleImport/boardDatedSync'
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
@@ -71,15 +72,11 @@ export function ShiftLivePage() {
   // hour, even though todayIso has already rolled over. Resolve the correct
   // work_date to look up for whichever assignment is actually active right
   // now, rather than blindly using calendar-today.
-  const lookupWorkDate =
-    category === 'night' && now.getHours() < SHIFT_CATEGORIES.night.endHour
-      ? addDaysIso(todayIso, -1)
-      : todayIso
-  const weekStartIso = (() => {
-    const d = new Date(now)
-    d.setDate(d.getDate() - d.getDay())
-    return toLocalDateIso(d)
-  })()
+  // Shared with ShiftSetupPage (boardDatedSync.ts) rather than duplicated:
+  // if the two screens ever disagreed about which work_date is current, they
+  // would go back to displaying and editing different assignment rows.
+  const lookupWorkDate = workDateForCategory(category, now)
+  const weekStartIso = weekStartIsoFor(now)
   const assignmentsQuery = useShiftAssignmentsForWeek(scheduleImportFlag.enabled ? weekStartIso : '')
   const { isAdmin, isCommander } = useAuth()
   const canSwap = isAdmin || isCommander
@@ -114,12 +111,12 @@ export function ShiftLivePage() {
         <p className="text-[52px] font-black leading-none tracking-tight text-text-primary tabular-nums">
           {formatHHMM(now)}
         </p>
-        {/* The displayed date follows lookupWorkDate, not calendar-today: during
-            the early-morning hours of an ongoing night shift the active shift's
-            own date is still "yesterday" even though the wall clock has already
-            rolled over — showing the shift's real date avoids the mismatch of
-            e.g. "03:00 Tuesday" while the night shift on screen is Monday's. */}
-        <p className="text-xs text-text-secondary mt-1">{formatIsraelDateLabel(lookupWorkDate)}</p>
+        {/* Calendar today, deliberately — NOT lookupWorkDate. This sits directly
+            under the wall clock, so it reads as "the current date" and showing
+            the night shift's start date here (yesterday, between midnight and
+            07:00) looked simply wrong next to a 03:09 clock. The shift's own
+            identity is already carried by the shift label below. */}
+        <p className="text-xs text-text-secondary mt-1">{formatIsraelDateLabel(todayIso)}</p>
         <div className="flex items-center gap-1.5 mt-2.5">
           <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
           <span className="text-xs font-bold text-primary tracking-wide">
