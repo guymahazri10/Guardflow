@@ -314,24 +314,12 @@ function datedOrLegacyName({
 
   if (!dated) return legacyName
 
-  const plannedLabel = dated.source_name ?? '—'
-  const actualLabel = dated.actual_name ?? plannedLabel
-
-  // GuardCard renders this inside a single-line `truncate` span, so this has
-  // to stay one inline unit rather than stacked block lines — the previous
-  // two-<div> version ("תוכנן: X" / "בפועל: Y") both fought that layout and,
-  // per explicit request, needlessly prefixed the common case (no swap yet)
-  // with a "planned:" label nobody needed to see. When there's been a swap,
-  // the name that's actually on shift is shown as the primary text, with a
-  // small "בפועל" marker rather than a second line — the swap history itself
-  // is already in staffing_change_log for anyone auditing.
-  const content = dated.is_manually_edited ? (
-    <span>
-      {actualLabel} <span className="text-text-muted font-medium text-[11px]">בפועל</span>
-    </span>
-  ) : (
-    plannedLabel
-  )
+  // Just the name of whoever is actually on shift — a manual swap wins over
+  // the imported plan. No "תוכנן"/"בפועל" qualifier: GuardCard renders this
+  // inside a single-line `truncate` span, and per explicit request the card
+  // should read as plainly as the legacy roster it replaced. The swap history
+  // itself lives in staffing_change_log for anyone auditing.
+  const content = dated.actual_name ?? dated.source_name ?? '—'
 
   if (!canSwap) return content
 
