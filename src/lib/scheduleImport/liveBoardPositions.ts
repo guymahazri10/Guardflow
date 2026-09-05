@@ -37,7 +37,7 @@ import type { ShiftCategory } from './types'
  * לובי עליון is the same position in every shift whether or not that
  * shift's manning happens to be armed.
  */
-const MAAVTACH_POSITION_ORDER: Record<ShiftCategory, string[]> = {
+export const MAAVTACH_POSITION_ORDER: Record<ShiftCategory, string[]> = {
   morning: ['לובי עליון', 'לובי תחתון', 'AB', 'CD', 'EFG', 'רכוב'],
   afternoon: ['AB', 'CD', 'EFG', 'רכוב'],
   night: ['לובי עליון', 'לובי תחתון'],

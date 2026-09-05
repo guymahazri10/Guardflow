@@ -132,3 +132,23 @@ export function formatIsraelDateLabel(dateIso: string): string {
   const [year, month, day] = dateIso.split('-').map(Number)
   return dateLabelFormatter.format(new Date(Date.UTC(year, month - 1, day)))
 }
+
+const narrowWeekdayFormatter = new Intl.DateTimeFormat('he-IL', {
+  weekday: 'narrow',
+  timeZone: 'UTC',
+})
+
+/**
+ * Formats a YYYY-MM-DD calendar date as a short Hebrew weekday + D/M label
+ * (e.g. "ה׳ 3/9") for compact contexts like a 7-column weekly grid header,
+ * where formatIsraelDateLabel's long form ("יום שלישי, 3 בספטמבר") doesn't
+ * fit. Same UTC-anchored calendar-date technique as formatIsraelDateLabel —
+ * see that function's comment. The day/month are composed manually rather
+ * than via Intl's own day/month formatting, which renders he-IL dates with
+ * a "." separator ("03.09") — this app's convention elsewhere is "/".
+ */
+export function formatIsraelShortDateLabel(dateIso: string): string {
+  const [year, month, day] = dateIso.split('-').map(Number)
+  const weekday = narrowWeekdayFormatter.format(new Date(Date.UTC(year, month - 1, day)))
+  return `${weekday} ${day}/${month}`
+}

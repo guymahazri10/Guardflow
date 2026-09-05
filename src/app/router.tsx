@@ -15,6 +15,7 @@ import { ShiftSetupPage } from '../pages/ShiftSetupPage'
 import { ShiftTemplateEditorPage } from '../pages/ShiftTemplateEditorPage'
 import { ShiftTemplatesPage } from '../pages/ShiftTemplatesPage'
 import { UserManagementPage } from '../pages/UserManagementPage'
+import { WeeklySchedulePage } from '../pages/WeeklySchedulePage'
 
 export function AppRouter() {
   return (
@@ -24,6 +25,7 @@ export function AppRouter() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
           <Route path="/shift-live" element={<ShiftLivePage />} />
+          <Route path="/weekly-schedule" element={<WeeklySchedulePage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route element={<EditorRoute />}>
             <Route path="/shift-setup" element={<ShiftSetupPage />} />
