@@ -93,6 +93,23 @@ export function normalizeExtractedAssignments(
   // in shift_assignments.
   const slotCounters = new Map<string, number>()
 
+  // Guards against an exact duplicate record — same date/category/position/
+  // hours/name — being counted as a second worker. Found live in production:
+  // 17 positions each got the identical name in both slot_index 0 and 1,
+  // always in the 'morning' category, always byte-identical down to the
+  // start/end instants. That pattern (always the same person, never two
+  // different names) is not "two people happen to share a name" — a person
+  // can't work two slots of the same shift at once. The real cause is that
+  // multiple uploaded images are concatenated with no deduplication
+  // (parseImageSchedule.ts): a follow-up image uploaded to capture a
+  // cropped section (e.g. a cut-off night row) can still fully overlap an
+  // earlier image's morning section, and every record from both images gets
+  // kept. Rather than trying to dedupe images before parsing (which would
+  // need to compare pixels, not records), the exact-duplicate record itself
+  // is the reliable signal — and it's cheap to catch here regardless of
+  // which image path produced it.
+  const seenExact = new Set<string>()
+
   for (const record of records) {
     const rowLabel = `${record.date ?? '?'} · ${record.position ?? '?'}`
 
@@ -173,6 +190,19 @@ export function normalizeExtractedAssignments(
 
     const workDateIso = workDate.toISOString().slice(0, 10)
     const slotKey = `${workDateIso}|${shiftCategory}|${position}`
+
+    const exactKey = `${slotKey}|${starts_at}|${ends_at}|${name}`
+    if (seenExact.has(exactKey)) {
+      warnings.push({
+        kind: 'duplicate_slot',
+        message: `שורה כפולה דולגה (${rowLabel}): "${name}" כבר נקלט לעמדה זו באותה שעה — כנראה מתמונה חופפת.`,
+        work_date: workDateIso,
+        position,
+      })
+      continue
+    }
+    seenExact.add(exactKey)
+
     const slotIndex = slotCounters.get(slotKey) ?? 0
     slotCounters.set(slotKey, slotIndex + 1)
 

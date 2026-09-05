@@ -64,6 +64,36 @@ describe('normalizeExtractedAssignments', () => {
     ])
   })
 
+  // Regression: found live in production — 17 positions each got the exact
+  // same name in both slot_index 0 and 1, always in 'morning', always
+  // byte-identical hours. Traced to multiple uploaded images being
+  // concatenated with no dedup (parseImageSchedule.ts): a follow-up image
+  // uploaded to capture a cropped section can still fully re-cover an
+  // earlier image's morning section, duplicating every record in it.
+  it('collapses an exact duplicate record (same name+hours) into one assignment, with a warning', () => {
+    const { assignments, warnings } = normalizeExtractedAssignments([
+      record({ worker_kind: 'מאבטח', position: 'AB', start: '06:45', end: '15:10', name: 'עמית גינזבורג' }),
+      // Same date/category/position/hours/name — an overlapping second image,
+      // not a genuine second worker.
+      record({ worker_kind: 'מאבטח', position: 'AB', start: '06:45', end: '15:10', name: 'עמית גינזבורג' }),
+    ], REFERENCE)
+    expect(assignments).toHaveLength(1)
+    expect(assignments[0].slot_index).toBe(0)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0].kind).toBe('duplicate_slot')
+  })
+
+  it('still keeps two genuinely different workers at the same position and hours', () => {
+    const { assignments } = normalizeExtractedAssignments([
+      record({ worker_kind: 'מאבטח', position: 'AB', start: '06:45', end: '15:10', name: 'עמית' }),
+      record({ worker_kind: 'מאבטח', position: 'AB', start: '06:45', end: '15:10', name: 'רוי' }),
+    ], REFERENCE)
+    expect(assignments.map((a) => [a.slot_index, a.source_name])).toEqual([
+      [0, 'עמית'],
+      [1, 'רוי'],
+    ])
+  })
+
   it('keeps the same position in two different shifts apart via shift_category', () => {
     const { assignments } = normalizeExtractedAssignments([
       record({ worker_kind: 'מאבטח', position: 'AB', start: '06:45', end: '15:10', name: 'בוקר' }),
