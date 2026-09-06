@@ -28,6 +28,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { utcIsoToIsraelHHMM } from '../lib/israelTime'
 import { AlertIcon, BracesIcon, CheckCircleIcon, ImageIcon, UploadIcon, XIcon } from '../components/ui/StateIcon'
 import type { ExtractedAssignment } from '../lib/scheduleImport/normalizeExtracted'
+import { looksLikeDayGroupedSchedule, adaptDayGroupedSchedule } from '../lib/scheduleImport/jsonScheduleAdapter'
 
 type WizardStep = 'upload' | 'imagesSelected' | 'processing' | 'preview' | 'error'
 
@@ -316,17 +317,36 @@ export function ScheduleImportPage() {
         throw new Error('קובץ ה-JSON אינו תקין (שגיאת פענוח). ודא שזה JSON תקני.')
       }
 
-      if (!Array.isArray(parsed)) {
-        throw new Error('קובץ ה-JSON חייב להכיל מערך של שיבוצים ([{...}, {...}]).')
-      }
-      if (parsed.length === 0) {
-        throw new Error('קובץ ה-JSON ריק — אין בו שיבוצים.')
+      // Two shapes are accepted: the flat array the in-app schema asks for,
+      // or a "day-grouped" shape ({ days: [{ date, assignments: [...] }] })
+      // — found live, a manager's own AI conversion tool produced the
+      // latter unprompted rather than the exact schema given to it, and
+      // it's a reasonable enough structure to support directly instead of
+      // forcing a re-conversion. See jsonScheduleAdapter.ts.
+      let records: ExtractedAssignment[]
+      let adapterWarnings: string[] = []
+
+      if (Array.isArray(parsed)) {
+        if (parsed.length === 0) {
+          throw new Error('קובץ ה-JSON ריק — אין בו שיבוצים.')
+        }
+        records = parsed as ExtractedAssignment[]
+      } else if (looksLikeDayGroupedSchedule(parsed)) {
+        const adapted = adaptDayGroupedSchedule(parsed, new Date().getFullYear())
+        if (adapted.records.length === 0) {
+          throw new Error('קובץ ה-JSON לא הכיל אף שיבוץ תקין שניתן לזהות.')
+        }
+        records = adapted.records
+        adapterWarnings = adapted.warnings
+      } else {
+        throw new Error(
+          'מבנה קובץ ה-JSON לא מזוהה. חייב להיות מערך שיבוצים ([{...}]), או אובייקט עם מפתח "days".',
+        )
       }
 
       // Field-level validation (date/time/position/etc.) happens inside
       // normalizeExtractedAssignments itself, same as the image path — a
       // malformed record here becomes a named warning there, not a crash.
-      const records = parsed as ExtractedAssignment[]
       const normalized = normalizeExtractedAssignments(records, new Date())
 
       const bytes = new TextEncoder().encode(text)
@@ -335,7 +355,10 @@ export function ScheduleImportPage() {
         'json',
         [file],
         bytes,
-        normalized.warnings,
+        [
+          ...adapterWarnings.map((message) => ({ kind: 'low_confidence_ocr' as const, message })),
+          ...normalized.warnings,
+        ],
         user!.id,
         normalized.coverage,
       )
