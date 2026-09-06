@@ -110,6 +110,12 @@ function WeekTable({
   days: string[]
   assignmentsByKey: Map<string, ShiftAssignment[]>
 }) {
+  // Reported directly: scrolling to see later days lost the position label
+  // entirely, so a cell was unreadable without scrolling back. `right-0`
+  // (not `left-0`) because in this RTL table the label column already sits
+  // at the right edge — sticky pins to a physical edge of the scroll
+  // container, not a logical/direction-aware one, so this has to match
+  // where the column actually is, not where "start" would be in LTR.
   function Cell({ row, day }: { row: Row; day: string }) {
     const bucket = assignmentsByKey.get(cellKey(day, row.shiftCategory, row.position)) ?? []
     if (bucket.length === 0) {
@@ -132,7 +138,9 @@ function WeekTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-text-secondary text-xs">
-              <th className="px-3 py-2.5 font-bold text-right">עמדה</th>
+              <th className="sticky right-0 z-10 bg-white px-3 py-2.5 font-bold text-right border-l border-border">
+                עמדה
+              </th>
               {days.map((day) => (
                 <th key={day} className="px-3 py-2.5 font-bold text-center whitespace-nowrap">
                   {formatIsraelShortDateLabel(day)}
@@ -148,7 +156,9 @@ function WeekTable({
             </tr>
             {COMMANDER_ROWS.map((row) => (
               <tr key={`${row.shiftCategory}-${row.position}`} className="border-b border-border last:border-0">
-                <td className="px-3 py-2 font-medium whitespace-nowrap">{SHIFT_CATEGORIES[row.shiftCategory].label}</td>
+                <td className="sticky right-0 z-10 bg-white px-3 py-2 font-medium whitespace-nowrap border-l border-border">
+                  {SHIFT_CATEGORIES[row.shiftCategory].label}
+                </td>
                 {days.map((day) => (
                   <Cell key={day} row={row} day={day} />
                 ))}
@@ -172,7 +182,9 @@ function WeekTable({
                   const row: Row = { shiftCategory: category, position }
                   return (
                     <tr key={position} className="border-b border-border last:border-0">
-                      <td className="px-3 py-2 font-medium whitespace-nowrap">{position}</td>
+                      <td className="sticky right-0 z-10 bg-white px-3 py-2 font-medium whitespace-nowrap border-l border-border">
+                        {position}
+                      </td>
                       {days.map((day) => (
                         <Cell key={day} row={row} day={day} />
                       ))}

@@ -26,7 +26,8 @@ import { useProfiles } from '../hooks/useProfiles'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import { useAuth } from '../contexts/AuthContext'
 import { utcIsoToIsraelHHMM } from '../lib/israelTime'
-import { AlertIcon, CheckCircleIcon, ImageIcon, UploadIcon, XIcon } from '../components/ui/StateIcon'
+import { AlertIcon, BracesIcon, CheckCircleIcon, ImageIcon, UploadIcon, XIcon } from '../components/ui/StateIcon'
+import type { ExtractedAssignment } from '../lib/scheduleImport/normalizeExtracted'
 
 type WizardStep = 'upload' | 'imagesSelected' | 'processing' | 'preview' | 'error'
 
@@ -137,7 +138,7 @@ export function ScheduleImportPage() {
   // warnings — never dropped.
   async function finishImport(
     normalized: NormalizedAssignment[],
-    sourceKind: 'excel' | 'image',
+    sourceKind: 'excel' | 'image' | 'json',
     files: File[],
     contentHashBytes: Uint8Array,
     parseWarnings: ValidationWarning[],
@@ -285,6 +286,65 @@ export function ScheduleImportPage() {
     }
   }
 
+  // Third input path, alongside Excel and image: a manager-prepared JSON
+  // file. Exists because Gemini's image reading isn't always accurate
+  // enough (reported directly) — a manager who wants guaranteed-correct
+  // data can convert a screenshot to structured JSON themselves, with any
+  // AI tool of their choice, and upload that instead of the raw image.
+  // It goes through the exact same validation/dedup/coverage pipeline as
+  // the image path (normalizeExtractedAssignments), just skipping the
+  // vision-model step — the records are already in ExtractedAssignment
+  // shape, whatever produced them.
+  async function handleJsonFileSelected(file: File) {
+    const precondition = checkPreconditions()
+    if (precondition) {
+      setErrorMessage(precondition)
+      setStep('error')
+      return
+    }
+
+    setStep('processing')
+    setErrorMessage(null)
+
+    try {
+      const text = await file.text()
+
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        throw new Error('קובץ ה-JSON אינו תקין (שגיאת פענוח). ודא שזה JSON תקני.')
+      }
+
+      if (!Array.isArray(parsed)) {
+        throw new Error('קובץ ה-JSON חייב להכיל מערך של שיבוצים ([{...}, {...}]).')
+      }
+      if (parsed.length === 0) {
+        throw new Error('קובץ ה-JSON ריק — אין בו שיבוצים.')
+      }
+
+      // Field-level validation (date/time/position/etc.) happens inside
+      // normalizeExtractedAssignments itself, same as the image path — a
+      // malformed record here becomes a named warning there, not a crash.
+      const records = parsed as ExtractedAssignment[]
+      const normalized = normalizeExtractedAssignments(records, new Date())
+
+      const bytes = new TextEncoder().encode(text)
+      await finishImport(
+        normalized.assignments,
+        'json',
+        [file],
+        bytes,
+        normalized.warnings,
+        user!.id,
+        normalized.coverage,
+      )
+    } catch (error) {
+      setErrorMessage(getReadableError(error))
+      setStep('error')
+    }
+  }
+
   if (step === 'upload' || step === 'error') {
     return (
       <PageShell>
@@ -341,6 +401,29 @@ export function ScheduleImportPage() {
             </div>
             <p className="font-bold text-text-primary text-sm">תמונות (צילומי מסך)</p>
             <p className="text-xs text-text-muted">פחות מדויק · דורש אימות לפני פרסום</p>
+          </label>
+
+          <label
+            className={`card border-2 border-dashed border-border-strong p-6 flex flex-col items-center text-center gap-2 transition-colors ${
+              profilesQuery.isLoading ? 'opacity-50' : 'active:bg-primary-light/40 cursor-pointer'
+            }`}
+          >
+            <input
+              type="file"
+              accept=".json,application/json"
+              disabled={profilesQuery.isLoading}
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void handleJsonFileSelected(file)
+                e.target.value = ''
+              }}
+            />
+            <div className="w-11 h-11 rounded-full bg-background-2 flex items-center justify-center text-text-secondary">
+              <BracesIcon className="w-5 h-5" />
+            </div>
+            <p className="font-bold text-text-primary text-sm">קובץ JSON</p>
+            <p className="text-xs text-text-muted">מדויק ביותר · להעלאה ידנית של נתונים שהוכנו מראש</p>
           </label>
 
           {profilesQuery.isLoading && (

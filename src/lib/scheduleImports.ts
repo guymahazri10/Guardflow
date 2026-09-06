@@ -4,7 +4,7 @@ import type { MatchedAssignment } from './scheduleImport/types'
 export type ScheduleImportRow = {
   id: string
   week_start: string
-  source_kind: 'excel' | 'pdf' | 'image'
+  source_kind: 'excel' | 'pdf' | 'image' | 'json'
   storage_path: string
   original_filename: string
   content_hash: string
@@ -93,7 +93,7 @@ const POSTGRES_UNIQUE_VIOLATION = '23505'
 
 export async function createScheduleImport(input: {
   week_start: string
-  source_kind: 'excel' | 'pdf' | 'image'
+  source_kind: 'excel' | 'pdf' | 'image' | 'json'
   storage_path: string
   original_filename: string
   content_hash: string

@@ -80,3 +80,12 @@ export function XIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function BracesIcon({ className }: IconProps) {
+  return (
+    <svg {...shared} className={className}>
+      <path d="M8 4c-2 0-2.5 1-2.5 3v3c0 1-.5 2-2 2 1.5 0 2 1 2 2v3c0 2 .5 3 2.5 3" />
+      <path d="M16 4c2 0 2.5 1 2.5 3v3c0 1 .5 2 2 2-1.5 0-2 1-2 2v3c0 2-.5 3-2.5 3" />
+    </svg>
+  )
+}
