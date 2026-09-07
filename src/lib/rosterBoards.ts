@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { siblingUnpublishFilter } from './rosterBoardPublishing'
 
 export type RosterBoardRow = {
   time: string
@@ -250,7 +251,32 @@ export async function publishRosterBoard(id: string, published: boolean): Promis
     throw new Error(getErrorMessage('Failed to publish roster board', error))
   }
 
-  return mapRosterBoard(data as RosterBoardRecord)
+  const board = mapRosterBoard(data as RosterBoardRecord)
+
+  // See siblingUnpublishFilter: publishing a variant should make it the sole
+  // active board for its category, or ShiftLivePage's useActiveBoard is back
+  // to guessing between two published boards — the root cause of the live
+  // screen showing a stale save. This is two sequential writes, not one
+  // transaction — a concurrent publish of another variant in the same narrow
+  // window could race. RLS requires the מנהל role for both, same as the
+  // publish above, so this never grants a caller more than they already had.
+  const unpublishSiblings = siblingUnpublishFilter(board)
+  if (unpublishSiblings) {
+    const { error: unpublishError } = await supabase
+      .from('roster_boards')
+      .update({ published: false })
+      .eq('shift_type', unpublishSiblings.shiftType)
+      .eq('published', true)
+      .neq('id', unpublishSiblings.excludeBoardId)
+
+    if (unpublishError) {
+      throw new Error(
+        getErrorMessage('Published the board, but failed to retire the other variant', unpublishError),
+      )
+    }
+  }
+
+  return board
 }
 
 export async function updateRosterBoardGuardNames(
