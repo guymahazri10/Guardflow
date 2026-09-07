@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -26,6 +27,7 @@ import {
   effectiveAssignmentName,
   effectiveAssignmentUserId,
 } from '../lib/scheduleImport/boardDatedSync'
+import { planDatedWrites, performRosterSave } from '../lib/scheduleImport/rosterSave'
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
@@ -42,6 +44,7 @@ export function ShiftSetupPage() {
   const { isAdmin, isCommander } = useAuth()
   const canEdit = isAdmin || isCommander
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const scheduleImportFlag = useFeatureFlag('weekly_schedule_import')
 
   const shiftTypesQuery = useShiftTypes()
@@ -147,43 +150,51 @@ export function ShiftSetupPage() {
     // — writing only guard_names would save successfully and then never be
     // displayed, because the live screen reads the dated row for that slot.
     // Slots with no dated row still go to guard_names as before.
-    const datedWrites = [...datedBySlot.entries()].filter(([role, assignment]) => {
-      const edited = guardNames[role] ?? { name: '', user_id: null }
-      const current = effectiveAssignmentName(assignment)
-      return edited.name.trim() !== current.trim()
-    })
-
-    try {
-      await updateGuardNamesMutation.mutateAsync({ id: board.id, guardNames })
-    } catch {
-      toast.error('שגיאה בשמירה — נסה שוב')
-      return
-    }
+    const datedWrites = planDatedWrites(datedBySlot, guardNames)
 
     // replace_assignment_worker restricts an אחמ"ש caller to an assignment
     // currently in progress; this bulk-edit screen has no per-slot "is this
     // live right now" notion the way ShiftLivePage's swap modal does, so
     // commanders keep using that flow for a same-shift correction.
-    if (isAdmin && datedWrites.length > 0) {
-      try {
-        for (const [role, assignment] of datedWrites) {
-          const edited = guardNames[role] ?? { name: '', user_id: null }
-          await callReplaceAssignmentWorker({
-            assignmentId: assignment.id,
-            newUserId: edited.user_id,
-            newName: edited.name,
-            reason: 'עדכון ידני דרך מסך שיבוץ',
-          })
-        }
-      } catch (err) {
-        console.error('Failed to write guard names to dated assignments', err)
-        // The guard_names save above genuinely succeeded, so this isn't a
-        // rollback — it's a partial save, and saying so is more useful than
-        // a blanket success toast the live screen would then contradict.
-        toast.error('הלוח נשמר, אך עדכון התצוגה החיה נכשל — בדוק במסך שידור חי.')
-        navigate('/shift-live')
-        return
-      }
+    const outcome = await performRosterSave({
+      boardId: board.id,
+      guardNames,
+      datedWrites,
+      canWriteDated: isAdmin,
+      deps: {
+        saveGuardNames: (vars) => updateGuardNamesMutation.mutateAsync(vars),
+        replaceAssignmentWorker: callReplaceAssignmentWorker,
+        // Realtime is the primary refresh path for other sessions, but this
+        // user's own screen shouldn't depend on Realtime's health to show the
+        // change they just made — mirrors ShiftLivePage.handleSwapSaved.
+        invalidateAssignments: () =>
+          queryClient.invalidateQueries({ queryKey: ['shift-assignments', weekStartIsoFor(nowRef.current)] }),
+      },
+    })
+
+    // Every branch below runs only after the writes have settled, so the
+    // navigation can never outrun the save.
+    if (outcome.status === 'guard-names-failed') {
+      // Don't swallow the underlying Supabase/RLS error — the toast is short
+      // by necessity, the console line is what makes it diagnosable.
+      console.error('Failed to save guard names', outcome.error)
+      toast.error('שגיאה בשמירה — נסה שוב')
+      return
+    }
+
+    if (outcome.status === 'dated-write-failed') {
+      console.error('Failed to write guard names to dated assignments', outcome.error)
+      toast.error('הלוח נשמר, אך עדכון התצוגה החיה נכשל — בדוק במסך שידור חי.')
+      navigate('/shift-live')
+      return
+    }
+
+    if (outcome.status === 'dated-writes-skipped') {
+      // Previously this path silently reported success while the live screen
+      // kept showing the old names.
+      toast.error(`השינוי ב־${outcome.roles.join(', ')} לא הוחל על התצוגה החיה — נדרש מנהל.`)
+      navigate('/shift-live')
+      return
     }
 
     toast.success('נשמר בהצלחה!')
