@@ -42,6 +42,9 @@ function trackedDeps(overrides: Partial<SaveDeps> = {}) {
     invalidateAssignments: vi.fn(() => {
       calls.push('invalidateAssignments')
     }),
+    publishBoard: vi.fn(async () => {
+      calls.push('publishBoard')
+    }),
     ...overrides,
   }
   return { calls, deps }
@@ -88,10 +91,11 @@ describe('performRosterSave', () => {
       guardNames: { 'מאבטח 1': named('דניאל שמש') },
       datedWrites,
       canWriteDated: true,
+      publishBoard: false,
       deps,
     })
 
-    expect(outcome).toEqual({ status: 'saved' })
+    expect(outcome).toEqual({ status: 'saved', published: false })
     // guard_names first, then the dated row, then the cache drop — a 'saved'
     // result is never returned with a write still in flight.
     expect(calls).toEqual(['saveGuardNames', 'replaceAssignmentWorker', 'invalidateAssignments'])
@@ -108,6 +112,7 @@ describe('performRosterSave', () => {
       guardNames: {},
       datedWrites,
       canWriteDated: true,
+      publishBoard: false,
       deps,
     })
 
@@ -129,6 +134,7 @@ describe('performRosterSave', () => {
         'מאבטח 1': named('דניאל שמש'),
       }),
       canWriteDated: true,
+      publishBoard: false,
       deps,
     })
 
@@ -152,6 +158,7 @@ describe('performRosterSave', () => {
         'מאבטח 1': named('דניאל שמש'),
       }),
       canWriteDated: true,
+      publishBoard: false,
       deps,
     })
 
@@ -169,6 +176,7 @@ describe('performRosterSave', () => {
         'מאבטח 1': named('דניאל שמש'),
       }),
       canWriteDated: false,
+      publishBoard: false,
       deps,
     })
 
@@ -186,10 +194,71 @@ describe('performRosterSave', () => {
       guardNames: { 'מאבטח 4': named('נעם סולומון') },
       datedWrites: [],
       canWriteDated: true,
+      publishBoard: false,
       deps,
     })
 
-    expect(outcome).toEqual({ status: 'saved' })
+    expect(outcome).toEqual({ status: 'saved', published: false })
     expect(calls).toEqual(['saveGuardNames'])
+  })
+})
+
+describe('performRosterSave — making the staffed variant live', () => {
+  const base = { boardId: 'b6', guardNames: { 'מאבטח 1': named('אליוסף שלזינגר') }, datedWrites: [], canWriteDated: true }
+
+  it('publishes the saved board only after its names are written, and reports it', async () => {
+    const { calls, deps } = trackedDeps()
+
+    const outcome = await performRosterSave({ ...base, publishBoard: true, deps })
+
+    expect(calls).toEqual(['saveGuardNames', 'publishBoard'])
+    expect(deps.publishBoard).toHaveBeenCalledWith('b6')
+    expect(outcome).toEqual({ status: 'saved', published: true })
+  })
+
+  it('does not publish when not asked to', async () => {
+    const { deps } = trackedDeps()
+
+    const outcome = await performRosterSave({ ...base, publishBoard: false, deps })
+
+    expect(deps.publishBoard).not.toHaveBeenCalled()
+    expect(outcome).toEqual({ status: 'saved', published: false })
+  })
+
+  it('does not publish a board whose names failed to save', async () => {
+    const { deps } = trackedDeps({
+      saveGuardNames: vi.fn(async () => {
+        throw new Error('rls')
+      }),
+    })
+
+    const outcome = await performRosterSave({ ...base, publishBoard: true, deps })
+
+    expect(outcome.status).toBe('guard-names-failed')
+    expect(deps.publishBoard).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a failed publish instead of reporting success', async () => {
+    const boom = new Error('update denied')
+    const { deps } = trackedDeps({ publishBoard: vi.fn(async () => { throw boom }) })
+
+    const outcome = await performRosterSave({ ...base, publishBoard: true, deps })
+
+    expect(outcome).toEqual({ status: 'publish-failed', error: boom })
+  })
+
+  it('still publishes before attempting dated writes, so a dated failure cannot leave the board hidden', async () => {
+    const dated = [{ role: 'מאבטח 1', assignment: assignment(), edited: named('דניאל שמש') }]
+    const { calls, deps } = trackedDeps({
+      replaceAssignmentWorker: vi.fn(async () => {
+        throw new Error('swap failed')
+      }),
+    })
+
+    const outcome = await performRosterSave({ ...base, datedWrites: dated, publishBoard: true, deps })
+
+    expect(outcome.status).toBe('dated-write-failed')
+    expect(calls.indexOf('publishBoard')).toBeGreaterThan(calls.indexOf('saveGuardNames'))
+    expect(deps.publishBoard).toHaveBeenCalledTimes(1)
   })
 })

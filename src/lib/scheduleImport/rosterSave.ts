@@ -53,10 +53,21 @@ export type SaveDeps = {
    * depend on Realtime's health to show their own change.
    */
   invalidateAssignments: () => void | Promise<void>
+  /**
+   * Makes the saved board the live one for its category (and retires the other
+   * published variant). Only called when `publishBoard` is requested.
+   */
+  publishBoard: (boardId: string) => Promise<unknown>
 }
 
 export type SaveOutcome =
-  | { status: 'saved' }
+  /** `published` is true when this save also made the board the live one. */
+  | { status: 'saved'; published: boolean }
+  /**
+   * guard_names was written but the board could not be made live, so the live
+   * screen may still show a different variant. Never reported as success.
+   */
+  | { status: 'publish-failed'; error: unknown }
   /** guard_names was written; some dated rows were not. Never reported as success. */
   | { status: 'dated-write-failed'; error: unknown }
   /**
@@ -80,9 +91,11 @@ export async function performRosterSave(input: {
    *  replace_assignment_worker to an assignment in progress, which this
    *  bulk screen has no per-slot notion of. */
   canWriteDated: boolean
+  /** Also publish this board once its names are saved (see shouldPublishOnSave). */
+  publishBoard: boolean
   deps: SaveDeps
 }): Promise<SaveOutcome> {
-  const { boardId, guardNames, datedWrites, canWriteDated, deps } = input
+  const { boardId, guardNames, datedWrites, canWriteDated, publishBoard, deps } = input
 
   try {
     await deps.saveGuardNames({ id: boardId, guardNames })
@@ -90,7 +103,18 @@ export async function performRosterSave(input: {
     return { status: 'guard-names-failed', error }
   }
 
-  if (datedWrites.length === 0) return { status: 'saved' }
+  // Publish right after the names land and before the dated writes: a failed
+  // dated write must not leave the board unpublished, and a failed publish is
+  // reported on its own because it explains "saved, but not what I see".
+  if (publishBoard) {
+    try {
+      await deps.publishBoard(boardId)
+    } catch (error) {
+      return { status: 'publish-failed', error }
+    }
+  }
+
+  if (datedWrites.length === 0) return { status: 'saved', published: publishBoard }
 
   if (!canWriteDated) {
     return { status: 'dated-writes-skipped', roles: datedWrites.map((w) => w.role) }
@@ -114,5 +138,5 @@ export async function performRosterSave(input: {
   }
 
   await deps.invalidateAssignments()
-  return { status: 'saved' }
+  return { status: 'saved', published: publishBoard }
 }

@@ -31,3 +31,28 @@ export function siblingUnpublishFilter(board: {
   if (!board.published) return null
   return { shiftType: board.shift_type, excludeBoardId: board.id }
 }
+
+/**
+ * Whether saving names on the setup screen should also make this board the
+ * live one for its category.
+ *
+ * The setup screen is where a manager picks a variant ("6 guards" vs "5
+ * guards") and staffs it, but nothing there published it — so names landed on
+ * a board the live screen was not showing, and the save looked like it did
+ * nothing. Saving now broadcasts the variant being staffed.
+ *
+ * Skipped for a board with no structure (nothing to show, and the editor's own
+ * canPublishRosterBoard rule forbids publishing it). When the published list
+ * is not known yet we publish anyway: publishRosterBoard is idempotent, so the
+ * worst case is one redundant write.
+ */
+export function shouldPublishOnSave(
+  board: { id: string; shift_type: string; published: boolean },
+  publishedBoards: ReadonlyArray<{ id: string; shift_type: string }> | undefined,
+  hasStructure: boolean,
+): boolean {
+  if (!hasStructure) return false
+  if (!board.published) return true
+  if (!publishedBoards) return true
+  return publishedBoards.some((b) => b.shift_type === board.shift_type && b.id !== board.id)
+}
