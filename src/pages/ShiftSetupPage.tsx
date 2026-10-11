@@ -11,7 +11,12 @@ import {
   type ShiftCategory,
 } from '../constants/shifts'
 import { useShiftTypes } from '../hooks/useShiftTypes'
-import { useRosterBoardsByShiftId, useUpdateGuardNames } from '../hooks/useRosterBoards'
+import {
+  usePublishRosterBoard,
+  usePublishedRosterBoards,
+  useRosterBoardsByShiftId,
+  useUpdateGuardNames,
+} from '../hooks/useRosterBoards'
 import { useProfiles } from '../hooks/useProfiles'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import type { ProfileListItem } from '../lib/profiles'
@@ -28,6 +33,8 @@ import {
   effectiveAssignmentUserId,
 } from '../lib/scheduleImport/boardDatedSync'
 import { planDatedWrites, performRosterSave } from '../lib/scheduleImport/rosterSave'
+import { pickMostRecentlyTouchedBoard } from '../lib/activeBoardSelection'
+import { shouldPublishOnSave } from '../lib/rosterBoardPublishing'
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
@@ -53,21 +60,36 @@ export function ShiftSetupPage() {
   const [category, setCategory] = useState<ShiftCategory>(() => getActiveCategory())
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
 
-  // Picks the first variant in the active category once shift types load —
-  // can't do this synchronously anymore since the catalog is now async.
+  const publishedBoardsQuery = usePublishedRosterBoards()
+  const publishedBoards = publishedBoardsQuery.data
+
+  // The variant the live screen is showing for a category — the same pick
+  // useActiveBoard makes, so the badge and the default selection here can
+  // never disagree with what "שידור חי" renders.
+  function liveShiftIdFor(cat: ShiftCategory): string | null {
+    const inCategory = new Set(allShifts.filter((s) => s.category === cat).map((s) => s.id))
+    const candidates = (publishedBoards ?? []).filter((b) => inCategory.has(b.shift_id))
+    return pickMostRecentlyTouchedBoard(candidates)?.shift_id ?? null
+  }
+
+  // Picks the live variant in the active category once shift types and the
+  // published boards load (falling back to the first variant) — opening on a
+  // different variant than the one on air is how names ended up saved to a
+  // board nobody was looking at. Can't be synchronous: the catalog is async.
   const didInitRef = useRef(false)
   useEffect(() => {
-    if (didInitRef.current || allShifts.length === 0) return
+    if (didInitRef.current || allShifts.length === 0 || publishedBoardsQuery.isLoading) return
     const firstInCategory = allShifts.find((s) => s.category === category)
     if (firstInCategory) {
-      setSelectedShiftId(firstInCategory.id)
+      setSelectedShiftId(liveShiftIdFor(category) ?? firstInCategory.id)
       didInitRef.current = true
     }
-  }, [allShifts, category])
+  }, [allShifts, category, publishedBoardsQuery.isLoading]) // eslint-disable-line react-hooks/exhaustive-deps
   const [guardNames, setGuardNames] = useState<Record<string, GuardAssignment>>({})
 
   const boardsQuery = useRosterBoardsByShiftId(selectedShiftId)
   const updateGuardNamesMutation = useUpdateGuardNames()
+  const publishRosterBoardMutation = usePublishRosterBoard()
   const profilesQuery = useProfiles({ enabled: canEdit })
   const profiles = profilesQuery.data ?? []
 
@@ -127,7 +149,7 @@ export function ShiftSetupPage() {
   function handleCategoryChange(cat: ShiftCategory) {
     setCategory(cat)
     const firstInCategory = allShifts.find((s) => s.category === cat)
-    setSelectedShiftId(firstInCategory?.id ?? null)
+    setSelectedShiftId(liveShiftIdFor(cat) ?? firstInCategory?.id ?? null)
   }
 
   function handleAssignmentChange(role: string, assignment: GuardAssignment) {
@@ -161,8 +183,15 @@ export function ShiftSetupPage() {
       guardNames,
       datedWrites,
       canWriteDated: isAdmin,
+      // Staffing a variant here is what a manager means by "this is today's
+      // schedule", so it goes on air — only a מנהל may change `published`
+      // (RLS), an אחמ"ש still just saves names.
+      publishBoard:
+        isAdmin &&
+        shouldPublishOnSave(board, publishedBoards, (board.cols?.length ?? 0) > 0 && (board.rows?.length ?? 0) > 0),
       deps: {
         saveGuardNames: (vars) => updateGuardNamesMutation.mutateAsync(vars),
+        publishBoard: (id) => publishRosterBoardMutation.mutateAsync({ id, published: true }),
         replaceAssignmentWorker: callReplaceAssignmentWorker,
         // Realtime is the primary refresh path for other sessions, but this
         // user's own screen shouldn't depend on Realtime's health to show the
@@ -182,6 +211,12 @@ export function ShiftSetupPage() {
       return
     }
 
+    if (outcome.status === 'publish-failed') {
+      console.error('Failed to publish the staffed board', outcome.error)
+      toast.error('השמות נשמרו, אך המשמרת לא עלתה לשידור החי — נסה שוב.')
+      return
+    }
+
     if (outcome.status === 'dated-write-failed') {
       console.error('Failed to write guard names to dated assignments', outcome.error)
       toast.error('הלוח נשמר, אך עדכון התצוגה החיה נכשל — בדוק במסך שידור חי.')
@@ -197,7 +232,7 @@ export function ShiftSetupPage() {
       return
     }
 
-    toast.success('נשמר בהצלחה!')
+    toast.success(outcome.published ? 'נשמר ועלה לשידור החי!' : 'נשמר בהצלחה!')
     navigate('/shift-live')
   }
 
@@ -205,7 +240,7 @@ export function ShiftSetupPage() {
   const shifts = allShifts.filter((s) => s.category === category)
   const cols: string[] = board?.cols ?? []
   const hasAnyName = cols.some((role) => guardNames[role]?.name.trim())
-  const saving = updateGuardNamesMutation.isPending
+  const saving = updateGuardNamesMutation.isPending || publishRosterBoardMutation.isPending
   const loading = boardsQuery.isLoading
   const noBoard = !loading && !board
   const isDisabled = saving || (canEdit && !noBoard && cols.length > 0 && !hasAnyName)
@@ -313,6 +348,9 @@ export function ShiftSetupPage() {
                       <p className="text-[11px] text-text-muted mt-0.5 tabular-nums" dir="ltr">
                         {getShiftHoursLabel(shift)}
                       </p>
+                      {shift.id === liveShiftIdFor(category) && (
+                        <p className="text-[10px] font-bold text-primary mt-1">● בשידור</p>
+                      )}
                     </div>
                   </div>
                 </button>
