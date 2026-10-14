@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -10,7 +11,12 @@ import {
   type ShiftCategory,
 } from '../constants/shifts'
 import { useShiftTypes } from '../hooks/useShiftTypes'
-import { useRosterBoardsByShiftId, useUpdateGuardNames } from '../hooks/useRosterBoards'
+import {
+  usePublishRosterBoard,
+  usePublishedRosterBoards,
+  useRosterBoardsByShiftId,
+  useUpdateGuardNames,
+} from '../hooks/useRosterBoards'
 import { useProfiles } from '../hooks/useProfiles'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import type { ProfileListItem } from '../lib/profiles'
@@ -26,6 +32,9 @@ import {
   effectiveAssignmentName,
   effectiveAssignmentUserId,
 } from '../lib/scheduleImport/boardDatedSync'
+import { planDatedWrites, performRosterSave } from '../lib/scheduleImport/rosterSave'
+import { pickMostRecentlyTouchedBoard } from '../lib/activeBoardSelection'
+import { shouldPublishOnSave } from '../lib/rosterBoardPublishing'
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
@@ -42,6 +51,7 @@ export function ShiftSetupPage() {
   const { isAdmin, isCommander } = useAuth()
   const canEdit = isAdmin || isCommander
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const scheduleImportFlag = useFeatureFlag('weekly_schedule_import')
 
   const shiftTypesQuery = useShiftTypes()
@@ -50,21 +60,36 @@ export function ShiftSetupPage() {
   const [category, setCategory] = useState<ShiftCategory>(() => getActiveCategory())
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
 
-  // Picks the first variant in the active category once shift types load —
-  // can't do this synchronously anymore since the catalog is now async.
+  const publishedBoardsQuery = usePublishedRosterBoards()
+  const publishedBoards = publishedBoardsQuery.data
+
+  // The variant the live screen is showing for a category — the same pick
+  // useActiveBoard makes, so the badge and the default selection here can
+  // never disagree with what "שידור חי" renders.
+  function liveShiftIdFor(cat: ShiftCategory): string | null {
+    const inCategory = new Set(allShifts.filter((s) => s.category === cat).map((s) => s.id))
+    const candidates = (publishedBoards ?? []).filter((b) => inCategory.has(b.shift_id))
+    return pickMostRecentlyTouchedBoard(candidates)?.shift_id ?? null
+  }
+
+  // Picks the live variant in the active category once shift types and the
+  // published boards load (falling back to the first variant) — opening on a
+  // different variant than the one on air is how names ended up saved to a
+  // board nobody was looking at. Can't be synchronous: the catalog is async.
   const didInitRef = useRef(false)
   useEffect(() => {
-    if (didInitRef.current || allShifts.length === 0) return
+    if (didInitRef.current || allShifts.length === 0 || publishedBoardsQuery.isLoading) return
     const firstInCategory = allShifts.find((s) => s.category === category)
     if (firstInCategory) {
-      setSelectedShiftId(firstInCategory.id)
+      setSelectedShiftId(liveShiftIdFor(category) ?? firstInCategory.id)
       didInitRef.current = true
     }
-  }, [allShifts, category])
+  }, [allShifts, category, publishedBoardsQuery.isLoading]) // eslint-disable-line react-hooks/exhaustive-deps
   const [guardNames, setGuardNames] = useState<Record<string, GuardAssignment>>({})
 
   const boardsQuery = useRosterBoardsByShiftId(selectedShiftId)
   const updateGuardNamesMutation = useUpdateGuardNames()
+  const publishRosterBoardMutation = usePublishRosterBoard()
   const profilesQuery = useProfiles({ enabled: canEdit })
   const profiles = profilesQuery.data ?? []
 
@@ -124,7 +149,7 @@ export function ShiftSetupPage() {
   function handleCategoryChange(cat: ShiftCategory) {
     setCategory(cat)
     const firstInCategory = allShifts.find((s) => s.category === cat)
-    setSelectedShiftId(firstInCategory?.id ?? null)
+    setSelectedShiftId(liveShiftIdFor(cat) ?? firstInCategory?.id ?? null)
   }
 
   function handleAssignmentChange(role: string, assignment: GuardAssignment) {
@@ -147,46 +172,67 @@ export function ShiftSetupPage() {
     // — writing only guard_names would save successfully and then never be
     // displayed, because the live screen reads the dated row for that slot.
     // Slots with no dated row still go to guard_names as before.
-    const datedWrites = [...datedBySlot.entries()].filter(([role, assignment]) => {
-      const edited = guardNames[role] ?? { name: '', user_id: null }
-      const current = effectiveAssignmentName(assignment)
-      return edited.name.trim() !== current.trim()
-    })
-
-    try {
-      await updateGuardNamesMutation.mutateAsync({ id: board.id, guardNames })
-    } catch {
-      toast.error('שגיאה בשמירה — נסה שוב')
-      return
-    }
+    const datedWrites = planDatedWrites(datedBySlot, guardNames)
 
     // replace_assignment_worker restricts an אחמ"ש caller to an assignment
     // currently in progress; this bulk-edit screen has no per-slot "is this
     // live right now" notion the way ShiftLivePage's swap modal does, so
     // commanders keep using that flow for a same-shift correction.
-    if (isAdmin && datedWrites.length > 0) {
-      try {
-        for (const [role, assignment] of datedWrites) {
-          const edited = guardNames[role] ?? { name: '', user_id: null }
-          await callReplaceAssignmentWorker({
-            assignmentId: assignment.id,
-            newUserId: edited.user_id,
-            newName: edited.name,
-            reason: 'עדכון ידני דרך מסך שיבוץ',
-          })
-        }
-      } catch (err) {
-        console.error('Failed to write guard names to dated assignments', err)
-        // The guard_names save above genuinely succeeded, so this isn't a
-        // rollback — it's a partial save, and saying so is more useful than
-        // a blanket success toast the live screen would then contradict.
-        toast.error('הלוח נשמר, אך עדכון התצוגה החיה נכשל — בדוק במסך שידור חי.')
-        navigate('/shift-live')
-        return
-      }
+    const outcome = await performRosterSave({
+      boardId: board.id,
+      guardNames,
+      datedWrites,
+      canWriteDated: isAdmin,
+      // Staffing a variant here is what a manager means by "this is today's
+      // schedule", so it goes on air — only a מנהל may change `published`
+      // (RLS), an אחמ"ש still just saves names.
+      publishBoard:
+        isAdmin &&
+        shouldPublishOnSave(board, publishedBoards, (board.cols?.length ?? 0) > 0 && (board.rows?.length ?? 0) > 0),
+      deps: {
+        saveGuardNames: (vars) => updateGuardNamesMutation.mutateAsync(vars),
+        publishBoard: (id) => publishRosterBoardMutation.mutateAsync({ id, published: true }),
+        replaceAssignmentWorker: callReplaceAssignmentWorker,
+        // Realtime is the primary refresh path for other sessions, but this
+        // user's own screen shouldn't depend on Realtime's health to show the
+        // change they just made — mirrors ShiftLivePage.handleSwapSaved.
+        invalidateAssignments: () =>
+          queryClient.invalidateQueries({ queryKey: ['shift-assignments', weekStartIsoFor(nowRef.current)] }),
+      },
+    })
+
+    // Every branch below runs only after the writes have settled, so the
+    // navigation can never outrun the save.
+    if (outcome.status === 'guard-names-failed') {
+      // Don't swallow the underlying Supabase/RLS error — the toast is short
+      // by necessity, the console line is what makes it diagnosable.
+      console.error('Failed to save guard names', outcome.error)
+      toast.error('שגיאה בשמירה — נסה שוב')
+      return
     }
 
-    toast.success('נשמר בהצלחה!')
+    if (outcome.status === 'publish-failed') {
+      console.error('Failed to publish the staffed board', outcome.error)
+      toast.error('השמות נשמרו, אך המשמרת לא עלתה לשידור החי — נסה שוב.')
+      return
+    }
+
+    if (outcome.status === 'dated-write-failed') {
+      console.error('Failed to write guard names to dated assignments', outcome.error)
+      toast.error('הלוח נשמר, אך עדכון התצוגה החיה נכשל — בדוק במסך שידור חי.')
+      navigate('/shift-live')
+      return
+    }
+
+    if (outcome.status === 'dated-writes-skipped') {
+      // Previously this path silently reported success while the live screen
+      // kept showing the old names.
+      toast.error(`השינוי ב־${outcome.roles.join(', ')} לא הוחל על התצוגה החיה — נדרש מנהל.`)
+      navigate('/shift-live')
+      return
+    }
+
+    toast.success(outcome.published ? 'נשמר ועלה לשידור החי!' : 'נשמר בהצלחה!')
     navigate('/shift-live')
   }
 
@@ -194,7 +240,7 @@ export function ShiftSetupPage() {
   const shifts = allShifts.filter((s) => s.category === category)
   const cols: string[] = board?.cols ?? []
   const hasAnyName = cols.some((role) => guardNames[role]?.name.trim())
-  const saving = updateGuardNamesMutation.isPending
+  const saving = updateGuardNamesMutation.isPending || publishRosterBoardMutation.isPending
   const loading = boardsQuery.isLoading
   const noBoard = !loading && !board
   const isDisabled = saving || (canEdit && !noBoard && cols.length > 0 && !hasAnyName)
@@ -302,6 +348,9 @@ export function ShiftSetupPage() {
                       <p className="text-[11px] text-text-muted mt-0.5 tabular-nums" dir="ltr">
                         {getShiftHoursLabel(shift)}
                       </p>
+                      {shift.id === liveShiftIdFor(category) && (
+                        <p className="text-[10px] font-bold text-primary mt-1">● בשידור</p>
+                      )}
                     </div>
                   </div>
                 </button>

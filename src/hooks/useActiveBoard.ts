@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { getActiveCategory, type ShiftCategory } from '../constants/shifts';
 import { useShiftTypes } from './useShiftTypes';
 import type { RosterBoard } from '../lib/rosterBoards';
+import { pickMostRecentlyTouchedBoard } from '../lib/activeBoardSelection';
 
 interface ActiveBoardResult {
   board: RosterBoard | null;
@@ -45,18 +46,23 @@ export function useActiveBoard(): ActiveBoardResult {
       setLoading(true);
       setError(null);
 
+      // Fetch every published candidate rather than letting the database break
+      // the tie: multiple shift-type variants in the same category can be
+      // published at once (confirmed in production — two morning variants,
+      // seeded in the same batch and sharing an identical created_at), and
+      // `order(created_at).limit(1)` then returns whichever row Postgres
+      // happens to place first, not necessarily the one a manager actually
+      // edited most recently. See pickMostRecentlyTouchedBoard for the
+      // tie-break this screen actually wants.
       const { data, error: err } = await supabase
         .from('roster_boards')
         .select('*')
         .eq('published', true)
-        .in('shift_id', shiftIds)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .in('shift_id', shiftIds);
 
       if (cancelled) return;
       if (err) setError(err.message);
-      else setBoard(data ?? null);
+      else setBoard(pickMostRecentlyTouchedBoard(data ?? []));
       setLoading(false);
     }
 
@@ -73,7 +79,15 @@ export function useActiveBoard(): ActiveBoardResult {
         const updated = payload.new as RosterBoard;
         if (!shiftIds.includes(updated.shift_id)) return;
         if (updated.published) {
-          setBoard(updated);
+          // A change to some OTHER published variant must not blindly replace
+          // what's shown — that's the same tie the initial fetch above now
+          // avoids. Re-run the same tie-break over whichever of the two is
+          // currently displayed plus the incoming row, so an edit to the
+          // stale variant can't flip the live screen away from the one the
+          // manager is actually working on.
+          setBoard((prev) =>
+            pickMostRecentlyTouchedBoard(prev && prev.id !== updated.id ? [prev, updated] : [updated]),
+          );
         } else {
           setBoard((prev) => (prev?.id === updated.id ? null : prev));
         }
