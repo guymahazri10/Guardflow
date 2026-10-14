@@ -314,22 +314,24 @@ export function ShiftSetupPage() {
                 <button
                   key={shift.id}
                   onClick={() => setSelectedShiftId(shift.id)}
-                  className={`card p-3.5 text-right transition-all active:scale-[0.98] ${
-                    selected ? 'ring-2 ring-primary' : ''
+                  aria-pressed={selected}
+                  className={`rounded-[24px] p-4 text-right transition-colors active:scale-[0.98] ${
+                    selected ? 'bg-primary text-white shadow-card-md' : 'bg-primary-light text-text-primary'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     {/* Checkmark circle */}
                     <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-                        selected ? 'border-primary bg-primary' : 'border-border'
+                      className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
+                        selected ? 'border-white bg-white' : 'border-primary-200 bg-white'
                       }`}
+                      aria-hidden="true"
                     >
                       {selected && (
-                        <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                        <svg width="11" height="11" viewBox="0 0 10 10" fill="none">
                           <path
                             d="M1.5 5l2.5 2.5 4.5-4.5"
-                            stroke="white"
+                            stroke="#1362FF"
                             strokeWidth="1.8"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -340,18 +342,15 @@ export function ShiftSetupPage() {
 
                     {/* Text */}
                     <div className="flex-1 text-right">
+                      <p className="text-[15px] font-bold leading-snug">{getShiftShortLabel(shift)}</p>
                       <p
-                        className={`text-sm font-semibold leading-snug ${
-                          selected ? 'text-primary' : 'text-text-primary'
-                        }`}
+                        className={`text-xs mt-0.5 tabular-nums ${selected ? 'text-white' : 'text-text-secondary'}`}
+                        dir="ltr"
                       >
-                        {getShiftShortLabel(shift)}
-                      </p>
-                      <p className="text-[11px] text-text-muted mt-0.5 tabular-nums" dir="ltr">
                         {getShiftHoursLabel(shift)}
                       </p>
                       {shift.id === liveShiftIdFor(category) && (
-                        <p className="text-[10px] font-bold text-primary mt-1">● בשידור</p>
+                        <p className={`text-xs font-bold mt-1 ${selected ? 'text-white' : 'text-primary-600'}`}>● בשידור</p>
                       )}
                     </div>
                   </div>
