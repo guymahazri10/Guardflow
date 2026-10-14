@@ -72,3 +72,20 @@ export async function subscribeToPush(userId: string): Promise<void> {
 
   if (error) throw error
 }
+
+/**
+ * Stops this device from receiving push alerts. The stored row goes first: if the delete
+ * fails we keep the browser subscription too, so the UI and the server never disagree.
+ */
+export async function unsubscribeFromPush(): Promise<void> {
+  const registration = await getRegistration()
+  if (!registration) return
+
+  const subscription = await registration.pushManager.getSubscription()
+  if (!subscription) return
+
+  const { error } = await supabase.from('push_subscriptions').delete().eq('endpoint', subscription.endpoint)
+  if (error) throw error
+
+  await subscription.unsubscribe()
+}
