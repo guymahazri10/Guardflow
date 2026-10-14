@@ -33,26 +33,52 @@ export function useProfiles(options?: { enabled?: boolean }) {
   })
 }
 
-export function useSetUserAppRole() {
+type OptimisticContext = { previous: ProfileListItem[] | undefined }
+
+/**
+ * Role and name edits show up in the list immediately and roll back if the save fails,
+ * so the page never waits on a round trip. The list is always refetched afterwards, so
+ * whatever the server actually stored is what ends up on screen.
+ */
+function useOptimisticProfileMutation<TVariables extends { userId: string }>(
+  mutationFn: (variables: TVariables) => Promise<ProfileListItem>,
+  apply: (profile: ProfileListItem, variables: TVariables) => ProfileListItem,
+) {
   const queryClient = useQueryClient()
 
-  return useMutation<ProfileListItem, Error, SetUserAppRoleVariables>({
-    mutationFn: ({ userId, newRole }) => setUserAppRole(userId, newRole),
-    onSuccess: async () => {
+  return useMutation<ProfileListItem, Error, TVariables, OptimisticContext>({
+    mutationFn,
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey: profileKeys.list() })
+      const previous = queryClient.getQueryData<ProfileListItem[]>(profileKeys.list())
+      queryClient.setQueryData<ProfileListItem[]>(profileKeys.list(), (current) =>
+        current?.map((profile) => (profile.id === variables.userId ? apply(profile, variables) : profile)),
+      )
+      return { previous }
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(profileKeys.list(), context.previous)
+      }
+    },
+    onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: profileKeys.list() })
     },
   })
 }
 
-export function useSetUserFullName() {
-  const queryClient = useQueryClient()
+export function useSetUserAppRole() {
+  return useOptimisticProfileMutation<SetUserAppRoleVariables>(
+    ({ userId, newRole }) => setUserAppRole(userId, newRole),
+    (profile, { newRole }) => ({ ...profile, app_role: newRole }),
+  )
+}
 
-  return useMutation<ProfileListItem, Error, SetUserFullNameVariables>({
-    mutationFn: ({ userId, newFullName }) => setUserFullName(userId, newFullName),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: profileKeys.list() })
-    },
-  })
+export function useSetUserFullName() {
+  return useOptimisticProfileMutation<SetUserFullNameVariables>(
+    ({ userId, newFullName }) => setUserFullName(userId, newFullName),
+    (profile, { newFullName }) => ({ ...profile, full_name: newFullName }),
+  )
 }
 
 export function useInviteUser() {
