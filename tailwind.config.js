@@ -5,24 +5,24 @@ export default {
     extend: {
       colors: {
         // Security-blue brand system (see design.md)
-        primary: '#1B56A5',
-        'primary-600': '#123F7A',
-        'primary-dark': '#0B2D59',
-        'primary-light': '#E8EFF8',
-        'primary-200': '#C9D8EC',
+        primary: '#1362FF',
+        'primary-600': '#0F4FD1',
+        'primary-dark': '#0B3EA8',
+        'primary-light': '#E8EFFF',
+        'primary-200': '#C9DAFF',
         gold: '#D4A24A',
         'gold-soft': '#FFF1D8',
         surface: '#ffffff',
-        background: '#F7F8FA',
-        'background-2': '#F1F3F5',
-        border: '#D9DEE5',
-        'border-strong': '#C8D0D9',
-        'text-primary': '#15171A',
-        'text-secondary': '#6F7782',
-        'text-muted': '#98A1AB',
+        background: '#F4F6FF',
+        'background-2': '#EAEFFC',
+        border: '#DDE3F3',
+        'border-strong': '#C9D2EA',
+        'text-primary': '#0C084A',
+        'text-secondary': '#5A6072',
+        'text-muted': '#8A90A3',
         // Small label text that carries information (role label, "לא הוגדר").
-        // 5.9:1 on white; text-muted (2.6:1) is for decoration/placeholder only.
-        'text-label': '#5D6570',
+        // 7.7:1 on white; text-muted is for decoration/placeholder only.
+        'text-label': '#4B5163',
         good: '#2F7D4A',
         'good-light': '#E5F2E9',
         warning: '#A66B13',
@@ -44,16 +44,16 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Heebo', 'sans-serif'],
+        sans: ['Assistant', 'sans-serif'],
       },
       borderRadius: {
-        card: '16px',
+        card: '20px',
         badge: '999px',
       },
       boxShadow: {
-        card: '0 1px 4px rgba(0,0,0,0.08)',
-        'card-md': '0 4px 16px rgba(0,0,0,0.10)',
-        'card-lg': '0 8px 32px rgba(0,0,0,0.12)',
+        card: '0 6px 20px rgba(19,98,255,0.08)',
+        'card-md': '0 10px 28px rgba(19,98,255,0.12)',
+        'card-lg': '0 16px 40px rgba(19,98,255,0.14)',
       },
       maxWidth: {
         mobile: '430px',

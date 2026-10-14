@@ -8,8 +8,8 @@ export interface NavItem {
   editorOnly?: boolean
 }
 
-const ACTIVE = '#ffffff'
-const INACTIVE = '#6F7782'
+const ACTIVE = '#1362FF'
+const INACTIVE = '#5A6072'
 
 export const NAV_ITEMS: NavItem[] = [
   {

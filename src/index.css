@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,15 +7,16 @@
 @layer base {
   html {
     direction: rtl;
-    font-family: 'Heebo', sans-serif;
+    font-family: 'Assistant', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
     margin: 0;
-    background-color: #F7F8FA;
-    color: #15171A;
+    /* Soft sky wash at the top that fades into the page color; the header and nav sit on it. */
+    background: #F4F6FF linear-gradient(180deg, #EAEFFF 0, rgba(244, 246, 255, 0) 280px) no-repeat;
+    color: #0C084A;
     /* Prevent horizontal scroll on mobile */
     overflow-x: hidden;
   }

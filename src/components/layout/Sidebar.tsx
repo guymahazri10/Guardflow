@@ -20,7 +20,7 @@ export default function Sidebar() {
               <>
                 <span
                   className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                    isActive ? 'bg-primary' : ''
+                    isActive ? 'bg-primary-light' : ''
                   }`}
                 >
                   {item.icon(isActive)}

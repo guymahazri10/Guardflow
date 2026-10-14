@@ -7,9 +7,9 @@ import type { ProfileListItem } from '../lib/profiles'
 const APP_ROLES: AppRole[] = ['מנהל', 'אחמ"ש', 'מאבטח']
 
 const ROLE_COLORS: Record<AppRole, { bg: string; color: string; border: string }> = {
-  מנהל: { bg: '#D4A24A', color: '#15171A', border: 'transparent' },
-  'אחמ"ש': { bg: '#E8EFF8', color: '#1B56A5', border: 'transparent' },
-  מאבטח: { bg: '#F1F3F5', color: '#6F7782', border: 'transparent' },
+  מנהל: { bg: '#D4A24A', color: '#0C084A', border: 'transparent' },
+  'אחמ"ש': { bg: '#E8EFFF', color: '#1362FF', border: 'transparent' },
+  מאבטח: { bg: '#EAEFFC', color: '#5A6072', border: 'transparent' },
 }
 
 const ROLE_DESCRIPTIONS: Record<AppRole, string> = {

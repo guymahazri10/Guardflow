@@ -3,6 +3,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useClock, formatHHMM } from '../hooks/useClock'
 import { useActiveBoard } from '../hooks/useActiveBoard'
 import GuardCard from '../components/ui/GuardCard'
+import ShiftRing from '../components/ui/ShiftRing'
+import { getShiftProgress } from '../lib/shiftProgress'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, type ShiftCategory } from '../constants/shifts'
 import { toLocalDateIso, formatIsraelDateLabel } from '../lib/israelTime'
@@ -101,37 +103,33 @@ export function ShiftLivePage() {
 
   return (
     <div className="flex flex-col flex-1 gap-0 max-w-mobile mx-auto w-full">
-      {/* ── Shift header: compact bar. The phone already shows the time, so the clock is
-            a quiet companion to the shift identity instead of the loudest thing on screen. ── */}
-      <div className="bg-white border-b border-border px-4 py-3 flex items-center gap-3">
+      {/* ── Shift header: the ring shows how far through the shift we are, with the clock
+            in the middle. The shift's identity leads; the date sits quietly beneath it. ── */}
+      <div className="card mx-4 mt-3 p-4 flex items-center gap-4 rounded-[24px]">
+        <ShiftRing progress={getShiftProgress(category, now)} time={formatHHMM(now)} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" aria-hidden="true" />
-            <span className="text-sm font-bold text-primary truncate">
-              {shiftLabel} · <bdi dir="ltr">{shiftHours}</bdi>
-            </span>
-          </div>
+          <p className="text-lg font-bold text-text-primary leading-tight truncate">{shiftLabel}</p>
+          <p className="text-sm text-text-label mt-1">
+            <bdi dir="ltr">{shiftHours}</bdi>
+          </p>
           {/* Calendar today, deliberately — NOT lookupWorkDate. This sits next to the wall
               clock, so it reads as "the current date" and showing the night shift's start
               date here (yesterday, between midnight and 07:00) looked simply wrong next to a
               03:09 clock. The shift's own identity is already carried by the shift label. */}
           <p className="text-xs text-text-label mt-0.5">{formatIsraelDateLabel(todayIso)}</p>
         </div>
-        <p className="text-[30px] font-extrabold leading-none tracking-tight text-text-primary tabular-nums">
-          {formatHHMM(now)}
-        </p>
       </div>
 
       {/* ── Tabs ── */}
-      <div role="tablist" aria-label="תצוגת משמרת" className="bg-white border-b border-border flex px-4">
+      <div role="tablist" aria-label="תצוגת משמרת" className="flex gap-2 px-4 mt-4">
         {(['now', 'all'] as Tab[]).map((t) => (
           <button
             key={t}
             role="tab"
             aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              tab === t ? 'tab-active' : 'tab-inactive'
+            className={`rounded-full px-5 min-h-11 text-sm font-bold transition-colors ${
+              tab === t ? 'bg-primary text-white' : 'bg-primary-light text-primary'
             }`}
           >
             {t === 'now' ? 'עכשיו' : 'כל המשמרת'}

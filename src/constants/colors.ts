@@ -63,7 +63,7 @@ export function getPositionColor(position: string): string {
  * positions; this lands every one of them above 5.8:1 while keeping a trace of the
  * hue. The hue itself is carried by the tint, the border and the dot in GuardCard.
  */
-const TEXT_PRIMARY_HEX = '#15171A';
+const TEXT_PRIMARY_HEX = '#0C084A';
 const POSITION_TEXT_WEIGHT = 0.55;
 
 function readableTextOn(hex: string): string {
