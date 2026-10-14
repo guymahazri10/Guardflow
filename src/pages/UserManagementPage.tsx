@@ -8,7 +8,7 @@ const APP_ROLES: AppRole[] = ['מנהל', 'אחמ"ש', 'מאבטח']
 
 const ROLE_COLORS: Record<AppRole, { bg: string; color: string; border: string }> = {
   מנהל: { bg: '#D4A24A', color: '#0C084A', border: 'transparent' },
-  'אחמ"ש': { bg: '#E8EFFF', color: '#1362FF', border: 'transparent' },
+  'אחמ"ש': { bg: '#E8EFFF', color: '#0F4FD1', border: 'transparent' },
   מאבטח: { bg: '#EAEFFC', color: '#5A6072', border: 'transparent' },
 }
 

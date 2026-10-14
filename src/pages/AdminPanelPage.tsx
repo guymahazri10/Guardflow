@@ -144,7 +144,7 @@ export function AdminPanelPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => navigate('/shift-templates')}
-            className="px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
+            className="px-3.5 py-2 text-sm font-bold text-primary-600 bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
           >
             תבניות משמרת
           </button>
@@ -152,14 +152,14 @@ export function AdminPanelPage() {
             <button
               type="button"
               onClick={() => navigate('/schedule-import')}
-              className="px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
+              className="px-3.5 py-2 text-sm font-bold text-primary-600 bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
             >
               ייבוא סידור שבועי
             </button>
           )}
           <button
             onClick={() => setShowPicker(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-sm font-bold text-primary-600 bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
           >
             <span className="text-base leading-none">+</span> לוז חדש
           </button>

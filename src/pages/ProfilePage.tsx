@@ -12,7 +12,7 @@ const ROLE_LABELS: Record<string, string> = {
 // אחמ"ש a functional blue tint, מאבטח stays quiet/neutral.
 const ROLE_CHIP_CLASS: Record<string, string> = {
   'מנהל': 'bg-gold text-text-primary',
-  'אחמ"ש': 'bg-primary-light text-primary',
+  'אחמ"ש': 'bg-primary-light text-primary-600',
   'מאבטח': 'bg-background-2 text-text-secondary',
 }
 

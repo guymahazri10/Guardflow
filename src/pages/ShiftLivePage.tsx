@@ -133,7 +133,7 @@ export function ShiftLivePage() {
             aria-selected={tab === t}
             onClick={() => setTab(t)}
             className={`rounded-full px-5 min-h-11 text-sm font-bold transition-colors ${
-              tab === t ? 'bg-primary text-white' : 'bg-primary-light text-primary'
+              tab === t ? 'bg-primary text-white' : 'bg-primary-light text-primary-600'
             }`}
           >
             {t === 'now' ? 'עכשיו' : 'כל המשמרת'}

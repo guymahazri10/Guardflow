@@ -91,7 +91,7 @@ export function ShiftTemplatesPage() {
         </div>
         <button
           onClick={handleOpenCreateForm}
-          className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 text-sm font-bold text-primary bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
+          className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 text-sm font-bold text-primary-600 bg-primary-light border border-primary/20 rounded-xl active:opacity-80 transition-opacity"
         >
           <span className="text-base leading-none">+</span> הוסף תבנית
         </button>

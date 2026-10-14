@@ -289,7 +289,7 @@ export function RosterEditorPage() {
                 }}
                 disabled={isSaving || (!published && !canPublish)}
                 title={!published && !canPublish ? publishHelperText : undefined}
-                className="flex-1 h-12 rounded-xl text-sm font-semibold text-primary bg-primary-light border border-primary/20 disabled:opacity-40"
+                className="flex-1 h-12 rounded-xl text-sm font-semibold text-primary-600 bg-primary-light border border-primary/20 disabled:opacity-40"
               >
                 {published ? 'החזר לטיוטה' : 'פרסם'}
               </button>
