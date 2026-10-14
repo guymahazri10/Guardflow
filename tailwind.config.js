@@ -41,6 +41,7 @@ export default {
           close: '#4f7fc4',
           exterior: '#c1613f',
           management: '#1B56A5',
+          meal: '#c9577a',
         },
       },
       fontFamily: {

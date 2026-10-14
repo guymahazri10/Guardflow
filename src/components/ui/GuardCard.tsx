@@ -24,14 +24,14 @@ export default function GuardCard({ role, guardName, task, dim }: GuardCardProps
         {guardName || <span className="text-text-label font-medium italic text-sm">לא הוגדר</span>}
       </span>
       <span
-        className="text-[11px] font-bold px-2.5 py-1 rounded-full border shrink-0 max-w-[9rem] flex items-center gap-1.5"
+        className="text-[13px] font-bold px-2.5 py-1 rounded-full border shrink-0 max-w-[52%] flex items-center gap-1.5"
         style={badgeStyle}
       >
         {/* The hue lives here, not in the text: a solid dot = someone is assigned, a hollow ring = open slot,
             so fill state never depends on color alone. */}
         <span
           aria-hidden="true"
-          className="w-2 h-2 rounded-full shrink-0 box-border"
+          className="w-2.5 h-2.5 rounded-full shrink-0 box-border"
           style={assigned ? { backgroundColor: dotColor } : { border: `1.5px solid ${dotColor}` }}
         />
         <span className="truncate">{task || '—'}</span>

@@ -16,45 +16,64 @@ export const COLORS = {
   },
 } as const;
 
-// Position → badge color mapping (Hebrew position names)
-// Distinct pastel-strong hues — clear enough to tell positions apart at a glance
-// even before anyone's assigned. See design.md "פלטת עמדות".
+// Position → badge color mapping (Hebrew position names).
+// One color per *kind* of post, so a guard can tell the kind at a glance even before
+// anyone's assigned. Keywords are stems so one entry covers the variants
+// ("סריק" matches סריקה / סריקת / סריקות). Anything not listed falls back to gray.
+// See design.md "צבע — עמדות".
+const GRAY = '#7C838C';
+const GREEN = '#5f9e72'; // scans, opening and closing the campus
+const GOLD = '#D2A85C'; // static posts: lobby, reception, square
+const ORANGE = '#d6823f'; // employee security, routine breaker
+const PURPLE = '#9868b8'; // standby
+const ROSE = '#c9577a'; // meal break
+const BLUE = '#1B56A5'; // management / the commander's inspections (unchanged)
+
 export const POSITION_COLORS: Record<string, string> = {
-  לובי: '#D2A85C',
-  סריקה: '#5f9e72',
-  פרימטר: '#5f9e72',
-  כונן: '#9868b8',
-  הפסקה: '#7C838C',
-  הפסקת: '#7C838C',
-  'שובר שגרה': '#d6823f',
-  חילוף: '#3f9aa8',
-  סגירה: '#4f7fc4',
-  'עמדה חיצונית': '#c1613f',
-  כיכר: '#c1613f',
-  ניהול: '#1B56A5',
-  ביקורות: '#1B56A5',
+  סריק: GREEN,
+  סגיר: GREEN,
+  פתיח: GREEN,
+  פרימטר: GREEN,
+  לובי: GOLD,
+  קבלה: GOLD,
+  כיכר: GOLD,
+  'שובר שגרה': ORANGE,
+  'אבטחת עובד': ORANGE,
+  כונן: PURPLE,
+  'הפסקת אוכל': ROSE,
+  ניהול: BLUE,
+  ביקורות: BLUE,
+  // Explicitly gray: "סידור עמדת קבלה + תדריך" is a setup task, not the reception post itself,
+  // and as the earliest keyword it wins over "קבלה" later in the text.
+  סידור: GRAY,
+  הפסקה: GRAY,
+  הפסקת: GRAY,
 };
 
 /**
  * Real position text is long and descriptive (e.g. "כונן - לובי תחתון"), not a
- * bare keyword — so match by substring. When more than one keyword appears
- * (as above), pick whichever one appears earliest in the text rather than
- * whichever key happens to come first in POSITION_COLORS — otherwise a
- * "כונן" duty that mentions "לובי" in passing would wrongly render as לובי.
+ * bare keyword — so match by substring. When more than one keyword appears,
+ * pick whichever one appears earliest in the text rather than whichever key
+ * happens to come first in POSITION_COLORS — otherwise a "כונן" duty that
+ * mentions "לובי" in passing would wrongly render as לובי. When two keywords
+ * start at the same place, the longer one wins ("הפסקת אוכל" over "הפסקת").
  */
 export function getPositionColor(position: string): string {
   let bestIndex = Infinity;
+  let bestLength = 0;
   let bestColor: string | null = null;
 
   for (const [keyword, color] of Object.entries(POSITION_COLORS)) {
     const index = position.indexOf(keyword);
-    if (index !== -1 && index < bestIndex) {
+    if (index === -1) continue;
+    if (index < bestIndex || (index === bestIndex && keyword.length > bestLength)) {
       bestIndex = index;
+      bestLength = keyword.length;
       bestColor = color;
     }
   }
 
-  return bestColor ?? '#6b7280';
+  return bestColor ?? GRAY;
 }
 
 /**
