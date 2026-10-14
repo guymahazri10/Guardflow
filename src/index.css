@@ -33,6 +33,23 @@
   input, textarea, select {
     font-family: inherit;
   }
+
+  /* Visible keyboard focus everywhere. :where() keeps specificity at zero so components
+     that style their own focus (inputs with focus:ring) still win. */
+  :where(a, button, summary, [tabindex]):focus-visible {
+    outline: 2px solid theme('colors.primary');
+    outline-offset: 2px;
+  }
+
+  /* Skeleton pulse is non-essential motion; spinners keep running because they signal progress. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-pulse {
+      animation: none;
+    }
+    * {
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer components {

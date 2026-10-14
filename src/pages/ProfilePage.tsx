@@ -1,5 +1,6 @@
 import { useAuth } from '../contexts/AuthContext'
 import toast from 'react-hot-toast'
+import { NotificationSettings } from '../components/ui/NotificationSettings'
 
 const ROLE_LABELS: Record<string, string> = {
   'מנהל': 'מנהל',
@@ -56,6 +57,8 @@ export function ProfilePage() {
           </div>
         )}
       </div>
+
+      <NotificationSettings />
 
       {/* Actions */}
       <div className="card divide-y divide-border">

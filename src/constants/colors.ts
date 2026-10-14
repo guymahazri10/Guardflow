@@ -57,6 +57,27 @@ export function getPositionColor(position: string): string {
   return bestColor ?? '#6b7280';
 }
 
+/**
+ * Readable text color for a position pill: the position hue pulled 55% toward the
+ * near-black text color. The raw hue on its own 22% tint is only 1.9-3.2:1 for most
+ * positions; this lands every one of them above 5.8:1 while keeping a trace of the
+ * hue. The hue itself is carried by the tint, the border and the dot in GuardCard.
+ */
+const TEXT_PRIMARY_HEX = '#15171A';
+const POSITION_TEXT_WEIGHT = 0.55;
+
+function readableTextOn(hex: string): string {
+  const parse = (value: string) => {
+    const v = value.replace('#', '');
+    return [0, 2, 4].map((i) => parseInt(v.substring(i, i + 2), 16));
+  };
+  const [r, g, b] = parse(hex);
+  const [tr, tg, tb] = parse(TEXT_PRIMARY_HEX);
+  const mix = (base: number, dark: number) => Math.round(POSITION_TEXT_WEIGHT * dark + (1 - POSITION_TEXT_WEIGHT) * base);
+  const toHex = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${toHex(mix(r, tr))}${toHex(mix(g, tg))}${toHex(mix(b, tb))}`;
+}
+
 function hexToRgba(hex: string, alpha: number): string {
   const value = hex.replace('#', '');
   const r = parseInt(value.substring(0, 2), 16);
@@ -82,10 +103,10 @@ export function getPositionBadgeStyle(position: string, assigned = true): Positi
   if (!assigned) {
     // Still tinted by position — an empty slot for "כונן" should read differently
     // from an empty "לובי" slot. Fill vs. outline carries the assigned/open state.
-    return { color: base, backgroundColor: 'transparent', borderColor: hexToRgba(base, 0.5) };
+    return { color: readableTextOn(base), backgroundColor: 'transparent', borderColor: hexToRgba(base, 0.5) };
   }
   return {
-    color: base,
+    color: readableTextOn(base),
     backgroundColor: hexToRgba(base, 0.22),
     borderColor: 'transparent',
   };

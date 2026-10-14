@@ -24,7 +24,7 @@ export default function BottomNav() {
                 >
                   {item.icon(isActive)}
                 </span>
-                <span className={`text-[9.5px] ${isActive ? 'font-extrabold text-primary' : 'font-medium text-text-secondary'}`}>
+                <span className={`text-[11px] ${isActive ? 'font-extrabold text-primary' : 'font-medium text-text-secondary'}`}>
                   {item.label}
                 </span>
               </>

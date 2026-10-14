@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useClock, formatHHMM } from '../hooks/useClock'
 import { useActiveBoard } from '../hooks/useActiveBoard'
 import GuardCard from '../components/ui/GuardCard'
-import { NotificationBell } from '../components/ui/NotificationBell'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, type ShiftCategory } from '../constants/shifts'
 import { toLocalDateIso, formatIsraelDateLabel } from '../lib/israelTime'
@@ -102,34 +101,34 @@ export function ShiftLivePage() {
 
   return (
     <div className="flex flex-col flex-1 gap-0 max-w-mobile mx-auto w-full">
-      {/* ── Clock hero ── */}
-      <div className="relative bg-white border-b border-border px-4 py-6 flex flex-col items-center">
-        <div className="absolute top-3 left-3">
-          <NotificationBell />
+      {/* ── Shift header: compact bar. The phone already shows the time, so the clock is
+            a quiet companion to the shift identity instead of the loudest thing on screen. ── */}
+      <div className="bg-white border-b border-border px-4 py-3 flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" aria-hidden="true" />
+            <span className="text-sm font-bold text-primary truncate">
+              {shiftLabel} · <bdi dir="ltr">{shiftHours}</bdi>
+            </span>
+          </div>
+          {/* Calendar today, deliberately — NOT lookupWorkDate. This sits next to the wall
+              clock, so it reads as "the current date" and showing the night shift's start
+              date here (yesterday, between midnight and 07:00) looked simply wrong next to a
+              03:09 clock. The shift's own identity is already carried by the shift label. */}
+          <p className="text-xs text-text-label mt-0.5">{formatIsraelDateLabel(todayIso)}</p>
         </div>
-        <span className="text-[11px] font-bold text-text-secondary mb-1">• פעיל עכשיו</span>
-        <p className="text-[52px] font-black leading-none tracking-tight text-text-primary tabular-nums">
+        <p className="text-[30px] font-extrabold leading-none tracking-tight text-text-primary tabular-nums">
           {formatHHMM(now)}
         </p>
-        {/* Calendar today, deliberately — NOT lookupWorkDate. This sits directly
-            under the wall clock, so it reads as "the current date" and showing
-            the night shift's start date here (yesterday, between midnight and
-            07:00) looked simply wrong next to a 03:09 clock. The shift's own
-            identity is already carried by the shift label below. */}
-        <p className="text-xs text-text-secondary mt-1">{formatIsraelDateLabel(todayIso)}</p>
-        <div className="flex items-center gap-1.5 mt-2.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-          <span className="text-xs font-bold text-primary tracking-wide">
-            {shiftLabel} · {shiftHours}
-          </span>
-        </div>
       </div>
 
       {/* ── Tabs ── */}
-      <div className="bg-white border-b border-border flex px-4">
+      <div role="tablist" aria-label="תצוגת משמרת" className="bg-white border-b border-border flex px-4">
         {(['now', 'all'] as Tab[]).map((t) => (
           <button
             key={t}
+            role="tab"
+            aria-selected={tab === t}
             onClick={() => setTab(t)}
             className={`flex-1 py-3 text-sm font-medium transition-colors ${
               tab === t ? 'tab-active' : 'tab-inactive'
@@ -370,8 +369,8 @@ function EmptyState({ categoryLabel, hours }: { categoryLabel: string; hours: st
       </div>
       <p className="font-semibold text-text-primary">אין לוח משמרת פעיל</p>
       <p className="text-text-secondary text-sm mt-1.5">לא נמצא לוח מפורסם למשמרת {categoryLabel}</p>
-      <p className="text-text-muted text-xs mt-1">{hours}</p>
-      <p className="text-text-muted text-xs mt-3">המנהל צריך ליצור ולפרסם לוח משמרת</p>
+      <p className="text-text-label text-xs mt-1">{hours}</p>
+      <p className="text-text-label text-xs mt-3">המנהל צריך ליצור ולפרסם לוח משמרת</p>
     </div>
   )
 }
@@ -379,8 +378,8 @@ function EmptyState({ categoryLabel, hours }: { categoryLabel: string; hours: st
 function Placeholder({ icon, text }: { icon: ReactNode; text: string }) {
   return (
     <div className="text-center py-12">
-      <div className="flex items-center justify-center mb-2 text-text-muted">{icon}</div>
-      <p className="text-text-muted text-sm">{text}</p>
+      <div className="flex items-center justify-center mb-2 text-text-label">{icon}</div>
+      <p className="text-text-label text-sm">{text}</p>
     </div>
   )
 }

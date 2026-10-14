@@ -23,7 +23,7 @@ export function PositionChangeNotifier() {
   const { board, category } = useActiveBoard()
   const notifiedForRef = useRef<string | null>(null)
 
-  // Permission is requested from a direct user click on <NotificationBell />,
+  // Permission is requested from a direct user click on the button in <NotificationSettings /> (profile page),
   // not silently here — browsers increasingly ignore or auto-mute a
   // permission prompt that isn't tied to a real user gesture.
 
