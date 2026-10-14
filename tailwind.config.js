@@ -36,7 +36,7 @@ export default {
           perimeter: '#5f9e72',
           standby: '#9868b8',
           break: '#7C838C',
-          routine: '#d6823f',
+          routine: '#2A9FC4',
           relief: '#3f9aa8',
           close: '#4f7fc4',
           exterior: '#c1613f',

@@ -24,7 +24,7 @@ export const COLORS = {
 const GRAY = '#7C838C';
 const GREEN = '#5f9e72'; // scans, opening and closing the campus
 const GOLD = '#D2A85C'; // static posts: lobby, reception, square
-const ORANGE = '#d6823f'; // employee security, routine breaker
+const TEAL = '#2A9FC4'; // employee security, routine breaker (sky blue, far from the gold and the green)
 const PURPLE = '#9868b8'; // standby
 const ROSE = '#c9577a'; // meal break
 const BLUE = '#1B56A5'; // management / the commander's inspections (unchanged)
@@ -37,8 +37,8 @@ export const POSITION_COLORS: Record<string, string> = {
   לובי: GOLD,
   קבלה: GOLD,
   כיכר: GOLD,
-  'שובר שגרה': ORANGE,
-  'אבטחת עובד': ORANGE,
+  'שובר שגרה': TEAL,
+  'אבטחת עובד': TEAL,
   כונן: PURPLE,
   'הפסקת אוכל': ROSE,
   ניהול: BLUE,

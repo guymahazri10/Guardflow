@@ -50,7 +50,7 @@ describe('position badge text contrast', () => {
 describe('position color groups', () => {
   const GREEN = '#5f9e72'
   const GOLD = '#D2A85C'
-  const ORANGE = '#d6823f'
+  const SKY = '#2A9FC4'
   const PURPLE = '#9868b8'
   const ROSE = '#c9577a'
   const GRAY = '#7C838C'
@@ -64,8 +64,8 @@ describe('position color groups', () => {
     ['לובי תחתון', GOLD],
     ['עמדת קבלה', GOLD],
     ['עמדת כיכר', GOLD],
-    ['שובר שגרה', ORANGE],
-    ['אבטחת עובדים', ORANGE],
+    ['שובר שגרה', SKY],
+    ['אבטחת עובדים', SKY],
     ['כונן - חדר תדריכים', PURPLE],
     ['הפסקת אוכל', ROSE],
   ])('"%s" gets its group color', (position, color) => {
