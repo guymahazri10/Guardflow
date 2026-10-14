@@ -247,7 +247,7 @@ export function ShiftSetupPage() {
 
   return (
     <div
-      className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-none"
+      className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-5xl"
       onTouchStart={(e) => {
         touchStartY.current = e.touches[0].clientY
       }}
@@ -275,7 +275,7 @@ export function ShiftSetupPage() {
       )}
 
       {/* ── Page header ── */}
-      <div className="bg-white border-b border-border px-4 pt-5 pb-4">
+      <div className="page-header">
         <h1 className="text-xl font-bold text-text-primary">ניהול משמרת</h1>
         <p className="text-text-secondary text-sm mt-0.5">בחר משמרת, הזן שמות — ולחץ שמור</p>
       </div>
@@ -367,8 +367,8 @@ export function ShiftSetupPage() {
         ) : cols.length === 0 ? (
           <NoColsState />
         ) : (
-          <div className="flex flex-col gap-2">
-            <p className="text-xs font-medium text-text-muted">שמות מאבטחים</p>
+          <div className="flex flex-col gap-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:content-start">
+            <p className="text-xs font-medium text-text-muted lg:col-span-2">שמות מאבטחים</p>
             {cols.map((role) => (
               <GuardNameRow
                 key={role}
@@ -384,7 +384,7 @@ export function ShiftSetupPage() {
       </div>
 
       {/* ── Sticky CTA ── */}
-      <div className="bg-white border-t border-border px-4 py-3 safe-bottom">
+      <div className="page-footer">
         <button
           onClick={() => {
             void handleSave()

@@ -58,6 +58,18 @@
     @apply bg-white rounded-card shadow-card border border-border;
   }
 
+  /* Page header / footer bars: full-bleed strips on phones, floating rounded cards on desktop.
+     lg:mx-4 matches the px-4 the page bodies use, so card edges line up with the content. */
+  .page-header {
+    @apply bg-white border-b border-border px-4 pt-5 pb-4
+           lg:mx-4 lg:mb-4 lg:rounded-[24px] lg:border lg:shadow-card lg:px-8 lg:py-6;
+  }
+
+  .page-footer {
+    @apply bg-white border-t border-border px-4 py-3 safe-bottom
+           lg:mx-4 lg:mt-4 lg:rounded-[24px] lg:border lg:shadow-card lg:px-8;
+  }
+
   .btn-primary {
     @apply bg-primary text-white font-bold rounded-full px-5 py-3 text-sm
            active:bg-primary-dark active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100

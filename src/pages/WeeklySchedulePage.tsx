@@ -9,12 +9,12 @@ import { SHIFT_CATEGORIES, type ShiftCategory } from '../constants/shifts'
 import { AlertIcon, ClipboardIcon } from '../components/ui/StateIcon'
 
 function PageShell({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-none">{children}</div>
+  return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-7xl">{children}</div>
 }
 
 function PageHeader({ light, bold }: { light: string; bold: string }) {
   return (
-    <div className="bg-white border-b border-border px-4 pt-5 pb-4">
+    <div className="page-header">
       <h1 className="text-lg">
         <span className="font-light text-text-secondary">{light}</span>{' '}
         <b className="font-extrabold">{bold}</b>

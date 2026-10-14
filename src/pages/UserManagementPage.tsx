@@ -97,9 +97,9 @@ export function UserManagementPage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
+    <div className="flex flex-col flex-1 max-w-mobile lg:max-w-5xl mx-auto w-full">
       {/* ── Header ── */}
-      <div className="bg-white border-b border-border px-4 pt-5 pb-4 flex items-center justify-between gap-3">
+      <div className="page-header flex items-center justify-between gap-3">
         <h1 className="text-lg">
           <span className="font-light text-text-secondary">ניהול</span> <b className="font-extrabold">משתמשים</b>
         </h1>
@@ -141,8 +141,8 @@ export function UserManagementPage() {
         )}
 
         {/* ── Users list ── */}
-        <div className="flex flex-col gap-2">
-          <p className="text-xs font-bold text-text-muted">משתמשים רשומים ({profiles.length})</p>
+        <div className="flex flex-col gap-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:content-start">
+          <p className="text-xs font-bold text-text-muted lg:col-span-2">משתמשים רשומים ({profiles.length})</p>
 
           {profilesQuery.isLoading ? (
             <ListSkeleton />

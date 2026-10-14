@@ -32,12 +32,12 @@ function nextTimeSlot(rows: RosterBoardRow[]): string {
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-none">{children}</div>
+  return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-6xl">{children}</div>
 }
 
 function TopBar({ onBack }: { onBack: () => void }) {
   return (
-    <div className="bg-white border-b border-border px-4 pt-5 pb-4 flex items-center justify-between">
+    <div className="page-header flex items-center justify-between">
       <h1 className="text-xl font-bold text-text-primary">עורך לו״ז</h1>
       <button onClick={onBack} className="text-sm font-medium text-primary flex items-center gap-1 active:opacity-70">
         חזור לרשימה ←

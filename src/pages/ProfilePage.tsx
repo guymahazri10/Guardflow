@@ -25,7 +25,7 @@ export function ProfilePage() {
   }
 
   return (
-    <div className="flex-1 p-4 flex flex-col gap-4 max-w-mobile mx-auto w-full">
+    <div className="flex-1 p-4 flex flex-col gap-4 max-w-mobile lg:max-w-2xl mx-auto w-full">
       <div className="text-center pt-2 pb-1">
         <h1 className="text-xl">
           <span className="font-light text-text-secondary">הפרופיל</span> <b className="font-extrabold">שלי</b>

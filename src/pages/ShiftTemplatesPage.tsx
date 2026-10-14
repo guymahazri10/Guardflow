@@ -83,8 +83,8 @@ export function ShiftTemplatesPage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
-      <div className="bg-white border-b border-border px-4 pt-5 pb-4 flex items-center justify-between">
+    <div className="flex flex-col flex-1 max-w-mobile lg:max-w-5xl mx-auto w-full">
+      <div className="page-header flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-text-primary">תבניות משמרת</h1>
           <p className="text-text-secondary text-sm mt-0.5">בחר תבנית כדי לערוך את תוכן הלוח שלה</p>
@@ -109,7 +109,7 @@ export function ShiftTemplatesPage() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5 pb-6">
+      <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2.5 pb-6 lg:grid lg:grid-cols-2 lg:gap-3 lg:content-start">
         {templatesQuery.isLoading || shiftTypesQuery.isLoading ? (
           <ListSkeleton />
         ) : templatesQuery.isError || shiftTypesQuery.isError ? null : (shiftTypesQuery.data ?? []).length === 0 ? (

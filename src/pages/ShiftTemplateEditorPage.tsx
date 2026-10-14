@@ -31,7 +31,7 @@ function nextTimeSlot(rows: RosterBoardRow[]): string {
 
 function TopBar({ onBack }: { onBack: () => void }) {
   return (
-    <div className="bg-white border-b border-border px-4 pt-5 pb-4 flex items-center justify-between">
+    <div className="page-header flex items-center justify-between">
       <h1 className="text-xl font-bold text-text-primary">עריכת תבנית</h1>
       <button onClick={onBack} className="text-sm font-medium text-primary flex items-center gap-1 active:opacity-70">
         חזור לרשימה ←
@@ -141,7 +141,7 @@ export function ShiftTemplateEditorPage() {
 
   if (!shiftId) {
     return (
-      <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
+      <div className="flex flex-col flex-1 max-w-mobile lg:max-w-5xl mx-auto w-full">
         <TopBar onBack={() => navigate('/shift-templates')} />
         <div className="p-4">
           <div className="card p-6 text-center text-sm text-text-secondary">חסר מזהה משמרת לעריכה.</div>
@@ -152,7 +152,7 @@ export function ShiftTemplateEditorPage() {
 
   if (templateQuery.isLoading || shiftTypesQuery.isLoading) {
     return (
-      <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
+      <div className="flex flex-col flex-1 max-w-mobile lg:max-w-5xl mx-auto w-full">
         <TopBar onBack={() => navigate('/shift-templates')} />
         <div className="p-4">
           <div className="card p-6 text-center text-sm text-text-secondary">טוען תבנית...</div>
@@ -163,7 +163,7 @@ export function ShiftTemplateEditorPage() {
 
   if (!shift || templateQuery.isError || !template) {
     return (
-      <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
+      <div className="flex flex-col flex-1 max-w-mobile lg:max-w-5xl mx-auto w-full">
         <TopBar onBack={() => navigate('/shift-templates')} />
         <div className="p-4">
           <div className="card p-6 text-center text-sm text-text-secondary">
@@ -175,7 +175,7 @@ export function ShiftTemplateEditorPage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full">
+    <div className="flex flex-col flex-1 max-w-mobile lg:max-w-5xl mx-auto w-full">
       <TopBar onBack={() => navigate('/shift-templates')} />
 
       <div className="px-4 pt-4">
