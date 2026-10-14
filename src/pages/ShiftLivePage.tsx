@@ -102,26 +102,30 @@ export function ShiftLivePage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 gap-0 max-w-mobile mx-auto w-full">
+    <div className="flex flex-col flex-1 gap-0 max-w-mobile lg:max-w-5xl mx-auto w-full">
       {/* ── Shift header: the ring shows how far through the shift we are, with the clock
             in the middle. The shift's identity leads; the date sits quietly beneath it. ── */}
-      <div className="card mx-4 mt-3 p-4 flex items-center gap-4 rounded-[24px]">
-        <ShiftRing progress={getShiftProgress(category, now)} time={formatHHMM(now)} />
+      <div className="card mx-4 lg:mx-0 mt-3 lg:mt-0 p-4 lg:px-8 lg:py-6 flex items-center gap-4 lg:gap-6 rounded-[24px]">
+        <ShiftRing
+          progress={getShiftProgress(category, now)}
+          time={formatHHMM(now)}
+          className="w-[84px] h-[84px] lg:w-[112px] lg:h-[112px]"
+        />
         <div className="flex-1 min-w-0">
-          <p className="text-lg font-bold text-text-primary leading-tight truncate">{shiftLabel}</p>
-          <p className="text-sm text-text-label mt-1">
+          <p className="text-lg lg:text-3xl font-bold text-text-primary leading-tight truncate">{shiftLabel}</p>
+          <p className="text-sm lg:text-base text-text-label mt-1">
             <bdi dir="ltr">{shiftHours}</bdi>
           </p>
           {/* Calendar today, deliberately — NOT lookupWorkDate. This sits next to the wall
               clock, so it reads as "the current date" and showing the night shift's start
               date here (yesterday, between midnight and 07:00) looked simply wrong next to a
               03:09 clock. The shift's own identity is already carried by the shift label. */}
-          <p className="text-xs text-text-label mt-0.5">{formatIsraelDateLabel(todayIso)}</p>
+          <p className="text-xs lg:text-sm text-text-label mt-0.5">{formatIsraelDateLabel(todayIso)}</p>
         </div>
       </div>
 
       {/* ── Tabs ── */}
-      <div role="tablist" aria-label="תצוגת משמרת" className="flex gap-2 px-4 mt-4">
+      <div role="tablist" aria-label="תצוגת משמרת" className="flex gap-2 px-4 lg:px-0 mt-4">
         {(['now', 'all'] as Tab[]).map((t) => (
           <button
             key={t}
@@ -138,7 +142,7 @@ export function ShiftLivePage() {
       </div>
 
       {/* ── Content ── */}
-      <div className="flex-1 p-4 overflow-y-auto">
+      <div className="flex-1 p-4 lg:px-0 lg:pb-0 overflow-y-auto">
         {loading ? (
           <LoadingSkeleton />
         ) : error ? (
@@ -190,7 +194,7 @@ function NowTab({
         </span>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 lg:gap-3">
         {cols.map((role) => (
           <GuardCard
             key={role}
@@ -255,7 +259,7 @@ function AllShiftTab({
               )}
             </div>
 
-            <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 lg:gap-3">
               {cols.map((role) => (
                 <GuardCard
                   key={role}
@@ -331,7 +335,7 @@ function datedOrLegacyName({
 
 function LoadingSkeleton() {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 lg:gap-3">
       {[1, 2, 3, 4].map((i) => (
         <div key={i} className="card h-16 px-3.5 flex items-center gap-2.5 animate-pulse">
           <div className="h-3 w-14 bg-border rounded" />
