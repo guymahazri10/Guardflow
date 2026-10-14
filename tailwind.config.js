@@ -21,7 +21,7 @@ export default {
         'text-secondary': '#5A6072',
         'text-muted': '#8A90A3',
         // Small label text that carries information (role label, "לא הוגדר").
-        // 7.7:1 on white; text-muted is for decoration/placeholder only.
+        // 7.9:1 on white; text-muted is for decoration/placeholder only.
         'text-label': '#4B5163',
         good: '#2F7D4A',
         'good-light': '#E5F2E9',
