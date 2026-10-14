@@ -281,13 +281,15 @@ export function ShiftSetupPage() {
       </div>
 
       {/* ── Category tabs: בוקר | צהריים | לילה ── */}
-      <div className="bg-white border-b border-border flex px-4">
+      <div role="tablist" aria-label="סוג משמרת" className="flex gap-2 px-4 mt-4">
         {(Object.keys(SHIFT_CATEGORIES) as ShiftCategory[]).map((cat) => (
           <button
             key={cat}
+            role="tab"
+            aria-selected={category === cat}
             onClick={() => handleCategoryChange(cat)}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              category === cat ? 'tab-active' : 'tab-inactive'
+            className={`rounded-full px-5 min-h-11 text-sm font-bold transition-colors ${
+              category === cat ? 'bg-primary text-white' : 'bg-primary-light text-primary-600'
             }`}
           >
             {SHIFT_CATEGORIES[cat].label}
