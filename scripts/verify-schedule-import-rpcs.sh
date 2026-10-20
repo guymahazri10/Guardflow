@@ -13,8 +13,8 @@
 # hand.
 #
 # Checks 1-6 below assert on individual scalar values extracted from psql.
-# Check 7 runs scripts/verify-schedule-import-rpcs.sql, a set of 10 PL/pgSQL
-# DO-block scenarios (T1-T10) covering phase20k's diff correctness, the
+# Check 7 runs scripts/verify-schedule-import-rpcs.sql, a set of 11 PL/pgSQL
+# DO-block scenarios (T1-T11) covering phase20k's diff correctness, the
 # empty-array/week/delete-confirmation guards, manual-edit preservation, the
 # import_id-scoped delete sweep, and the actual_*/source correction on
 # non-manual re-uploads — each one wrapped in the same all-or-nothing
@@ -227,19 +227,19 @@ SQL
 echo "$result" | grep -q 'יכול להחליף רק שיבוץ פעיל' && check "אחמ\"ש rejected from replacing a future (not-yet-active) assignment" "yes" "yes" || check "אחמ\"ש rejected from replacing a future (not-yet-active) assignment" "yes" "no"
 
 echo
-echo "== 7. phase20k diff/safety scenarios (T1-T10, scripts/verify-schedule-import-rpcs.sql) =="
+echo "== 7. phase20k diff/safety scenarios (T1-T11, scripts/verify-schedule-import-rpcs.sql) =="
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if phase20k_output=$(docker exec -i "${DB_CONTAINER}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 < "${SCRIPT_DIR}/verify-schedule-import-rpcs.sql" 2>&1); then
   echo "$phase20k_output" | grep '^NOTICE:' | sed 's/^/  /'
   if echo "$phase20k_output" | grep -q '=== ALL phase20k SCENARIOS PASSED ==='; then
-    check "all 10 phase20k scenarios (T1-T10) passed" "yes" "yes"
+    check "all 11 phase20k scenarios (T1-T11) passed" "yes" "yes"
   else
     echo "$phase20k_output"
-    check "all 10 phase20k scenarios (T1-T10) passed" "yes" "no"
+    check "all 11 phase20k scenarios (T1-T11) passed" "yes" "no"
   fi
 else
   echo "$phase20k_output"
-  check "all 10 phase20k scenarios (T1-T10) passed" "yes" "no"
+  check "all 11 phase20k scenarios (T1-T11) passed" "yes" "no"
 fi
 
 echo

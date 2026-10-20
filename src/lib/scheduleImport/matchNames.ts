@@ -1,6 +1,6 @@
 import type { MatchedAssignment, NormalizedAssignment } from './types'
 
-function normalizeForMatch(raw: string): string {
+export function normalizeForMatch(raw: string): string {
   return raw
     .normalize('NFC')
     .replace(/["'׳״]/g, '')
@@ -83,9 +83,15 @@ export function matchNames(
 
     const normalizedSource = normalizeForMatch(assignment.source_name)
 
-    const exact = normalizedProfiles.find((p) => p.normalized === normalizedSource)
-    if (exact) {
-      return { ...assignment, planned_user_id: exact.id, match_confidence: 'exact' }
+    const exactMatches = normalizedProfiles.filter((p) => p.normalized === normalizedSource)
+    if (exactMatches.length === 1) {
+      return { ...assignment, planned_user_id: exactMatches[0].id, match_confidence: 'exact' }
+    }
+    if (exactMatches.length > 1) {
+      // Two profiles share this exact name: which person the schedule means
+      // is unknowable from the name alone, so no account is linked. The name
+      // from the file stays as it is; the manager can link one by hand.
+      return { ...assignment, planned_user_id: null, match_confidence: 'none' }
     }
 
     // Strategy 1: whole-string edit distance — catches a single typo'd or

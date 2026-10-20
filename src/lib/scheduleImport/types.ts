@@ -44,6 +44,9 @@ export type ValidationWarning = {
     | 'low_confidence_ocr'
     | 'week_mismatch'
     | 'double_booked'
+    // The same NAME (not a linked account) appears in overlapping shifts. With
+    // no user link it may be two different people, so this never blocks.
+    | 'possible_double_booking'
     // A מאבטח row's label didn't resolve to exactly one canonical position,
     // and isn't the one supported non-physical role label either (see
     // positions.ts's resolveGuardPosition). The assignment is still

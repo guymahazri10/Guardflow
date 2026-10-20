@@ -607,6 +607,69 @@ begin
   raise notice 'T10 PASSED: corrected re-upload updated planned_*/actual_*/source/import_id correctly';
 end $$;
 
+-- ===========================================================================
+-- T11: assignments with no linked user account.
+-- An unlinked name publishes and is kept as read (source_name); the same name
+-- in two slots is two rows, not a duplicate and not a deletion; linking a user
+-- later (a re-publish carrying planned_user_id) leaves source_name untouched;
+-- re-publishing the same content is "unchanged".
+-- ===========================================================================
+do $$
+declare
+  manager_id uuid := '00000000-0000-0000-0000-000000000001';
+  guard_id uuid := '00000000-0000-0000-0000-000000000003';
+  test_week date := date '2030-04-07';
+  v_import_id uuid;
+  rows_after int;
+  linked_row public.shift_assignments;
+  result jsonb;
+  mk_a jsonb;
+  mk_b jsonb;
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', manager_id, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+
+  insert into public.schedule_imports (week_start, source_kind, storage_path, original_filename, content_hash, created_by)
+  values (test_week, 'excel', 'test/t11', 't11.xlsx', 't11hash', manager_id)
+  returning id into v_import_id;
+
+  -- Same name, two slots of one post, no linked user.
+  mk_a := jsonb_build_object('work_date', test_week, 'shift_category', 'morning', 'worker_kind', 'מאבטח', 'position', 'לובי עליון', 'slot_index', 0,
+    'starts_at', (test_week || ' 06:45:00+02')::timestamptz, 'ends_at', (test_week || ' 15:10:00+02')::timestamptz, 'source_name', 'שם משותף', 'planned_user_id', null);
+  mk_b := jsonb_build_object('work_date', test_week, 'shift_category', 'morning', 'worker_kind', 'מאבטח', 'position', 'לובי עליון', 'slot_index', 1,
+    'starts_at', (test_week || ' 06:45:00+02')::timestamptz, 'ends_at', (test_week || ' 15:10:00+02')::timestamptz, 'source_name', 'שם משותף', 'planned_user_id', null);
+
+  perform public.publish_schedule_import(
+    p_import_id => v_import_id, p_assignments => jsonb_build_array(mk_a, mk_b),
+    p_resolutions => '{}'::jsonb, p_confirmed_delete_ids => '{}'::uuid[], p_dry_run => false);
+
+  select count(*) into rows_after from public.shift_assignments where import_id = v_import_id;
+  assert rows_after = 2, format('T11 FAILED: expected 2 rows for the same name in two slots, got %s', rows_after);
+  assert (select count(*) from public.shift_assignments where import_id = v_import_id and planned_user_id is null and source_name = 'שם משותף' and actual_name = 'שם משותף') = 2,
+    'T11 FAILED: unlinked assignments must keep source_name/actual_name with no user';
+
+  -- Re-publishing the same content changes nothing and creates no duplicate.
+  result := public.publish_schedule_import(
+    p_import_id => v_import_id, p_assignments => jsonb_build_array(mk_a, mk_b),
+    p_resolutions => '{}'::jsonb, p_confirmed_delete_ids => '{}'::uuid[], p_dry_run => true);
+  assert jsonb_array_length(result -> 'unchanged') = 2 and jsonb_array_length(result -> 'to_insert') = 0 and jsonb_array_length(result -> 'to_delete') = 0,
+    'T11 FAILED: identical re-publish should be 2 unchanged, 0 new, 0 deleted';
+
+  -- Link a user to slot 0 later; the name from the file must not change.
+  mk_a := jsonb_set(mk_a, '{planned_user_id}', to_jsonb(guard_id::text));
+  perform public.publish_schedule_import(
+    p_import_id => v_import_id, p_assignments => jsonb_build_array(mk_a, mk_b),
+    p_resolutions => '{}'::jsonb, p_confirmed_delete_ids => '{}'::uuid[], p_dry_run => false);
+
+  select * into linked_row from public.shift_assignments where import_id = v_import_id and slot_index = 0;
+  assert linked_row.planned_user_id = guard_id, 'T11 FAILED: later link not stored';
+  assert linked_row.source_name = 'שם משותף' and linked_row.actual_name = 'שם משותף', 'T11 FAILED: linking a user changed the name from the file';
+  assert (select count(*) from public.shift_assignments where import_id = v_import_id) = 2, 'T11 FAILED: linking created a duplicate or removed a row';
+  assert (select planned_user_id from public.shift_assignments where import_id = v_import_id and slot_index = 1) is null, 'T11 FAILED: linking slot 0 must not link slot 1';
+
+  raise notice 'T11 PASSED: unlinked names publish as read; same name in two slots = two rows; later link keeps source_name';
+end $$;
+
 do $$
 begin
   raise notice '=== ALL phase20k SCENARIOS PASSED ===';

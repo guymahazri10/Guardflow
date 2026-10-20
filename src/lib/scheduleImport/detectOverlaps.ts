@@ -1,5 +1,6 @@
 import type { PublishDiffRow } from '../scheduleImports'
 import type { ValidationWarning } from './types'
+import { normalizeForMatch } from './matchNames'
 
 /**
  * Flags a worker scheduled in two overlapping shifts after publish.
@@ -21,7 +22,7 @@ export function detectOverlaps(rows: PublishDiffRow[]): ValidationWarning[] {
   const groups = new Map<string, PublishDiffRow[]>()
 
   for (const row of rows) {
-    const identity = row.actual_user_id ?? row.planned_user_id ?? `name:${row.actual_name ?? row.source_name ?? ''}`
+    const identity = row.actual_user_id ?? row.planned_user_id ?? `name:${normalizeForMatch(row.actual_name ?? row.source_name ?? '')}`
     if (!identity || identity === 'name:') continue
     const group = groups.get(identity) ?? []
     group.push(row)
@@ -30,7 +31,7 @@ export function detectOverlaps(rows: PublishDiffRow[]): ValidationWarning[] {
 
   const warnings: ValidationWarning[] = []
 
-  for (const group of groups.values()) {
+  for (const [identity, group] of groups) {
     if (group.length < 2) continue
     const sorted = [...group].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
     for (let i = 0; i < sorted.length - 1; i++) {
@@ -39,9 +40,12 @@ export function detectOverlaps(rows: PublishDiffRow[]): ValidationWarning[] {
         const b = sorted[j]
         if (b.starts_at >= a.ends_at) break // sorted by starts_at — no later row can overlap once this one starts after a ends
         const name = a.actual_name ?? a.source_name ?? '?'
+        // A shared linked account is a real double booking; a shared bare
+        // name may just be two people with the same name.
+        const nameOnly = identity.startsWith('name:')
         warnings.push({
-          kind: 'double_booked',
-          message: `שיבוץ כפול: ${name} משובץ בו-זמנית ל-${a.position} (${a.work_date}) ול-${b.position} (${b.work_date}).`,
+          kind: nameOnly ? 'possible_double_booking' : 'double_booked',
+          message: `${nameOnly ? 'ייתכן שיבוץ כפול (השם לא מקושר למשתמש, אולי אדם אחר באותו שם)' : 'שיבוץ כפול'}: ${name} משובץ בו-זמנית ל-${a.position} (${a.work_date}) ול-${b.position} (${b.work_date}).`,
           work_date: a.work_date,
           position: a.position,
         })

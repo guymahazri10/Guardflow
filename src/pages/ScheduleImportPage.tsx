@@ -11,6 +11,16 @@ import { matchNames } from '../lib/scheduleImport/matchNames'
 import { validateSchedule, type ExistingAssignmentSummary } from '../lib/scheduleImport/validateSchedule'
 import { detectOverlaps } from '../lib/scheduleImport/detectOverlaps'
 import { NIGHT_GUARD_ROLE } from '../lib/scheduleImport/positions'
+import { WeeklyPreviewGrid } from '../components/WeeklyPreviewGrid'
+import { buildPreviewGrid } from '../lib/scheduleImport/previewGrid'
+import { getPublishBlockers } from '../lib/scheduleImport/publishGate'
+import {
+  carryOverLinks,
+  linkAssignmentToUser,
+  summarizeNames,
+  toPublishPayload,
+} from '../lib/scheduleImport/nameSummary'
+import { normalizeForMatch } from '../lib/scheduleImport/matchNames'
 import {
   ACK_REQUIRED_WARNING_KINDS,
   type MatchedAssignment,
@@ -210,9 +220,9 @@ export function ScheduleImportPage() {
     }
 
     const profiles = (profilesQuery.data ?? []).map((p) => ({ id: p.id, full_name: p.full_name }))
-    const matched = matchNames(normalized, profiles)
-
     const existingAssignments = await fetchShiftAssignmentsForWeek(selectedWeekStart)
+    // Links made earlier survive a re-upload (see carryOverLinks).
+    const matched = carryOverLinks(matchNames(normalized, profiles), existingAssignments)
     const existingSummaries: ExistingAssignmentSummary[] = existingAssignments.map((a) => ({
       work_date: a.work_date,
       shift_category: a.shift_category,
@@ -247,7 +257,7 @@ export function ScheduleImportPage() {
     // client-side validateSchedule heuristics above.
     const diff = await callPublishScheduleImport({
       importId: scheduleImport.id,
-      assignments: validated.assignments,
+      assignments: toPublishPayload(validated.assignments, new Set()),
       resolutions: {},
       confirmedDeleteIds: [],
       dryRun: true,
@@ -714,6 +724,15 @@ function CoverageReport({ coverage }: { coverage: NormalizeExtractedResult['cove
   )
 }
 
+function SummaryMetric({ value, text, tone }: { value: number; text: string; tone?: 'good' }) {
+  return (
+    <div className="card px-3 py-2.5 text-center">
+      <p className={`text-xl font-extrabold tabular-nums ${tone === 'good' ? 'text-good' : 'text-text-primary'}`}>{value}</p>
+      <p className="text-xs text-text-secondary">{text}</p>
+    </div>
+  )
+}
+
 function StatChip({ label, value, tone }: { label: string; value: number; tone: 'good' | 'neutral' | 'warning' }) {
   const toneClasses =
     tone === 'good'
@@ -751,7 +770,7 @@ function MatchConfidenceCell({
   assignment: MatchedAssignment
   profiles: { id: string; full_name: string | null }[]
   isConfirmed: boolean
-  onAssignExisting: (userId: string, name: string) => void
+  onAssignExisting: (userId: string) => void
   onConfirmFuzzy: () => void
 }) {
   if (assignment.match_confidence === 'exact') {
@@ -768,7 +787,7 @@ function MatchConfidenceCell({
       <div className="flex items-center gap-1.5">
         <select
           className={selectFieldClass}
-          onChange={(e) => onAssignExisting(e.target.value, assignment.source_name ?? '')}
+          onChange={(e) => onAssignExisting(e.target.value)}
           defaultValue=""
         >
           <option value="" disabled>
@@ -797,12 +816,12 @@ function MatchConfidenceCell({
 
   return (
     <select
-      className={`${selectFieldClass} border-danger/40`}
-      onChange={(e) => onAssignExisting(e.target.value, assignment.source_name ?? '')}
+      className={selectFieldClass}
+      onChange={(e) => onAssignExisting(e.target.value)}
       defaultValue=""
     >
       <option value="" disabled>
-        בחר עובד קיים
+        לא מקושר — קשר למשתמש
       </option>
       {profiles.map((p) => (
         <option key={p.id} value={p.id}>
@@ -872,6 +891,13 @@ function SchedulePreview({
   const profilesQuery = useProfiles()
 
   const conflictKeys = new Set(conflicts.map((c) => identityKey(c)))
+  const nameSummary = summarizeNames(assignments, confirmedFuzzy)
+  const previewGrid = buildPreviewGrid(assignments, confirmedFuzzy, detectedWeekStart)
+  const nameCounts = new Map<string, number>()
+  for (const a of assignments) {
+    const key = normalizeForMatch(a.source_name ?? '')
+    if (key) nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1)
+  }
 
   function markDirty() {
     setIsDirty(true)
@@ -883,17 +909,25 @@ function SchedulePreview({
     markDirty()
   }
 
-  function assignExistingProfile(index: number, userId: string, name: string) {
-    setAssignments((prev) => {
-      const row = prev[index]
-      if (row) {
-        setConfirmedFuzzy((prevConfirmed) => new Set(prevConfirmed).add(identityKey(row)))
-      }
-      return prev.map((a, i) =>
-        i === index ? { ...a, planned_user_id: userId, source_name: name, match_confidence: 'exact' as const } : a,
-      )
-    })
+  // Ties an account to one assignment (or to every assignment carrying the same
+  // name). source_name is never rewritten: the name from the file stays.
+  function linkRows(index: number, userId: string, applyToSameName = false) {
+    const target = assignments[index]
+    if (!target) return
+    const sameName = normalizeForMatch(target.source_name ?? '')
+    setAssignments((prev) =>
+      prev.map((a, i) =>
+        i === index || (applyToSameName && sameName && normalizeForMatch(a.source_name ?? '') === sameName)
+          ? linkAssignmentToUser(a, userId)
+          : a,
+      ),
+    )
     markDirty()
+  }
+
+  function confirmSuggestionAt(index: number) {
+    const row = assignments[index]
+    if (row) confirmFuzzyMatch(row)
   }
 
   function confirmFuzzyMatch(row: MatchedAssignment) {
@@ -948,7 +982,7 @@ function SchedulePreview({
     try {
       const diff = await callPublishScheduleImport({
         importId,
-        assignments,
+        assignments: toPublishPayload(assignments, confirmedFuzzy),
         resolutions: buildResolutions(),
         confirmedDeleteIds: [],
         dryRun: true,
@@ -972,33 +1006,21 @@ function SchedulePreview({
       : []
 
   const pendingDeletes = !isDirty && dryRunResult ? dryRunResult.to_delete : []
-  const allDeletesConfirmed = pendingDeletes.every((row) => row.id && confirmedDeleteIds.has(row.id))
 
-  const hasUnresolvedFuzzy = assignments.some((a) => a.match_confidence === 'fuzzy' && !confirmedFuzzy.has(identityKey(a)))
-  const hasUnresolvedNone = assignments.some((a) => a.match_confidence === 'none')
-  const hasUnconfirmedDeletes = pendingDeletes.length > 0 && !allDeletesConfirmed
-  const hasOverlaps = overlapWarnings.length > 0
-  // A מאבטח row that named a shift period but resolved to no canonical
-  // position token at all, and isn't the one supported role label either
-  // (normalizeSchedule.ts) — extracted so the manager can see it here, but
-  // never publishable until a human decides the real position mapping.
-  const hasUnresolvedPositionMapping = warnings.some((w) => w.kind === 'unresolved_position_mapping')
-  // The one supported role label (the night solo-guard, "לילה מאבטח")
-  // received more names on one date than its known capacity — a real
-  // crew-size mismatch, never silently dropped to fit.
-  const hasPositionCapacityMismatch = warnings.some((w) => w.kind === 'position_capacity_mismatch')
-  const ackWarnings = warnings.filter((w) => ACK_REQUIRED_WARNING_KINDS.includes(w.kind))
-  const hasUnackedWarnings = ackWarnings.some((w) => !ackedWarnings.has(warningKey(w)))
-  const publishBlocked =
-    hasUnresolvedFuzzy ||
-    hasUnresolvedNone ||
-    isDirty ||
-    !dryRunResult ||
-    hasUnconfirmedDeletes ||
-    hasOverlaps ||
-    hasUnresolvedPositionMapping ||
-    hasPositionCapacityMismatch ||
-    hasUnackedWarnings
+  const visibleWarnings = warnings.filter((w) => w.kind !== 'unmatched_name')
+  const ackWarnings = visibleWarnings.filter((w) => ACK_REQUIRED_WARNING_KINDS.includes(w.kind))
+  const blockerList = getPublishBlockers({
+    isDirty,
+    hasDryRun: !!dryRunResult,
+    pendingDeleteCount: pendingDeletes.length,
+    confirmedDeleteCount: pendingDeletes.filter((row) => row.id && confirmedDeleteIds.has(row.id)).length,
+    overlapWarnings: isDirty ? [] : overlapWarnings,
+    warnings: visibleWarnings,
+    isAcknowledged: (w) => ackedWarnings.has(warningKey(w)),
+  })
+  // A name with no linked user account is NOT a blocker (see publishGate.ts).
+  const publishBlocked = blockerList.length > 0
+  const has = (b: (typeof blockerList)[number]) => blockerList.includes(b)
 
   async function handlePublish() {
     if (publishBlocked) return
@@ -1007,7 +1029,7 @@ function SchedulePreview({
     try {
       await callPublishScheduleImport({
         importId,
-        assignments,
+        assignments: toPublishPayload(assignments, confirmedFuzzy),
         resolutions: buildResolutions(),
         confirmedDeleteIds: Array.from(confirmedDeleteIds),
         dryRun: false,
@@ -1044,9 +1066,18 @@ function SchedulePreview({
           <p className="text-xs text-text-secondary">שבוע מזוהה: החל מ-{detectedWeekStart}</p>
         )}
 
+        {/* Four separate measures: what was read, and how many distinct names
+            have a linked account. A name with no account is still read and
+            shown; the missing link is optional information, not an error. */}
+        <section aria-label="סיכום הקובץ" className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <SummaryMetric value={nameSummary.assignments} text="שיבוצים נקראו" />
+          <SummaryMetric value={nameSummary.uniqueNames} text="שמות ייחודיים" />
+          <SummaryMetric value={nameSummary.linkedNames} text="מקושרים למשתמש" tone="good" />
+          <SummaryMetric value={nameSummary.unlinkedNames} text="לא מקושרים למשתמש" />
+        </section>
+
         <div className="flex gap-2 flex-wrap">
           <StatChip label="דולגו בפענוח" value={stats.parseRejected} tone="neutral" />
-          <StatChip label="שמות שלא זוהו" value={stats.unmatched_names} tone="warning" />
           {!isDirty && dryRunResult && (
             <>
               <StatChip label="חדשים" value={dryRunResult.to_insert.length} tone="good" />
@@ -1078,6 +1109,14 @@ function SchedulePreview({
           </div>
         )}
 
+        <WeeklyPreviewGrid
+          grid={previewGrid}
+          profiles={(profilesQuery.data ?? []).map((p) => ({ id: p.id, full_name: p.full_name }))}
+          nameCounts={nameCounts}
+          onLink={linkRows}
+          onConfirmSuggestion={confirmSuggestionAt}
+        />
+
         {coverage && <CoverageReport coverage={coverage} />}
 
         {(isDirty || dryRunRunning) && (
@@ -1098,13 +1137,28 @@ function SchedulePreview({
 
         {dryRunError && <ErrorBanner message={dryRunError} />}
 
-        {!isDirty && hasOverlaps && (
+        {!isDirty && overlapWarnings.some((w) => w.kind === 'double_booked') && (
           <div role="alert" className="card p-4 bg-danger-light border-danger/20 flex gap-2.5">
             <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-danger" />
             <ul className="flex flex-col gap-1 text-xs text-danger">
-              {overlapWarnings.map((w, i) => (
-                <li key={i}>{w.message}</li>
-              ))}
+              {overlapWarnings
+                .filter((w) => w.kind === 'double_booked')
+                .map((w, i) => (
+                  <li key={i}>{w.message}</li>
+                ))}
+            </ul>
+          </div>
+        )}
+
+        {!isDirty && overlapWarnings.some((w) => w.kind === 'possible_double_booking') && (
+          <div className="card p-4 bg-warning-light border-warning/20 flex gap-2.5">
+            <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-warning" />
+            <ul className="flex flex-col gap-1 text-xs text-warning">
+              {overlapWarnings
+                .filter((w) => w.kind === 'possible_double_booking')
+                .map((w, i) => (
+                  <li key={i}>{w.message}</li>
+                ))}
             </ul>
           </div>
         )}
@@ -1135,7 +1189,7 @@ function SchedulePreview({
           </div>
         )}
 
-        {warnings.length > 0 && (
+        {visibleWarnings.length > 0 && (
           <div className="card p-4 bg-warning-light border-warning/20 flex gap-2.5">
             <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-warning" />
             <ul className="flex flex-col gap-1 text-xs text-warning">
@@ -1150,7 +1204,7 @@ function SchedulePreview({
                   </button>
                 </li>
               )}
-              {warnings.map((w, i) =>
+              {visibleWarnings.map((w, i) =>
                 ACK_REQUIRED_WARNING_KINDS.includes(w.kind) ? (
                   <li key={i} className="flex items-start gap-1.5">
                     <input
@@ -1172,7 +1226,10 @@ function SchedulePreview({
           </div>
         )}
 
-        <div className="card overflow-hidden">
+        <details className="card overflow-hidden">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-text-primary">
+            פירוט שיבוצים ועריכה (שם, קישור למשתמש, הסרת שורה)
+          </summary>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -1215,7 +1272,7 @@ function SchedulePreview({
                           assignment={a}
                           profiles={profilesQuery.data ?? []}
                           isConfirmed={confirmedFuzzy.has(key)}
-                          onAssignExisting={(userId, name) => assignExistingProfile(i, userId, name)}
+                          onAssignExisting={(userId) => linkRows(i, userId)}
                           onConfirmFuzzy={() => confirmFuzzyMatch(a)}
                         />
                       </td>
@@ -1248,22 +1305,21 @@ function SchedulePreview({
               </tbody>
             </table>
           </div>
-        </div>
+        </details>
 
         {publishBlocked && (
           <div role="alert" className="card p-4 bg-warning-light border-warning/20 flex gap-2.5">
             <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-warning" />
             <div className="text-xs text-warning flex flex-col gap-0.5">
-              {hasUnresolvedFuzzy && <p>יש לאשר את כל ההתאמות המשוערות (התאמה לא ודאית) לפני פרסום.</p>}
-              {hasUnresolvedNone && <p>יש לבחור עובד קיים או להסיר כל שורה עם שם שלא זוהה לפני פרסום.</p>}
-              {(isDirty || !dryRunResult) && <p>יש להריץ בדיקה מחדש (dry run) לפני פרסום.</p>}
-              {!isDirty && hasUnconfirmedDeletes && <p>יש לאשר את כל המחיקות הצפויות לפני פרסום.</p>}
-              {!isDirty && hasOverlaps && <p>יש לפתור את השיבוצים הכפולים המפורטים למעלה לפני פרסום.</p>}
-              {hasUnresolvedPositionMapping && (
+              {has('no_dry_run') && <p>יש להריץ בדיקה מחדש (dry run) לפני פרסום.</p>}
+              {has('stale_preview') && <p>התצוגה השתנתה — יש להריץ בדיקה מחדש לפני פרסום.</p>}
+              {has('unconfirmed_deletes') && <p>יש לאשר את כל המחיקות הצפויות לפני פרסום.</p>}
+              {has('double_booked') && <p>יש לפתור את השיבוצים הכפולים של אותו משתמש מקושר (המפורטים למעלה) לפני פרסום.</p>}
+              {has('unresolved_position') && (
                 <p>קיימים שיבוצים שלא ממופים לעמדה קנונית — לא ניתן לפרסם עד שתוגדר ההחלטה (ראו האזהרות למעלה).</p>
               )}
-              {hasUnackedWarnings && <p>יש לאשר במפורש את כל החריגות המסומנות (שעות חריגות, קבוצה לא מוכרת) לפני פרסום.</p>}
-              {hasPositionCapacityMismatch && (
+              {has('unacknowledged_warnings') && <p>יש לאשר במפורש את כל החריגות המסומנות (שעות חריגות, קבוצה לא מוכרת) לפני פרסום.</p>}
+              {has('over_capacity') && (
                 <p>התקבלו יותר מאבטחי-לילה ממספר המקומות המרבי ({NIGHT_GUARD_ROLE.maxCapacity}) — לא ניתן לפרסם עד שהפער יבדק (ראו האזהרות למעלה).</p>
               )}
             </div>
