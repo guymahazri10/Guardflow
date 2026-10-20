@@ -21,8 +21,7 @@ import {
 import {
   computeContentHash,
   createScheduleImport,
-  uploadScheduleFile,
-  updateScheduleImportStoragePath,
+  storeImportFiles,
   fetchShiftAssignmentsForWeek,
   callPublishScheduleImport,
   type PublishResult,
@@ -238,14 +237,9 @@ export function ScheduleImportPage() {
     // file's path is recorded on the row (existing single-column schema) —
     // the rest still land in storage for the manager to review manually if
     // ever needed, just without a dedicated multi-path audit column.
-    let firstStoragePath: string | null = null
-    for (const file of files) {
-      const { storagePath } = await uploadScheduleFile(file, selectedWeekStart, scheduleImport.id)
-      if (firstStoragePath === null) firstStoragePath = storagePath
-    }
-    if (firstStoragePath) {
-      await updateScheduleImportStoragePath(scheduleImport.id, firstStoragePath)
-    }
+    // An identical re-upload resumes the stored import and uploads nothing —
+    // see storeImportFiles.
+    await storeImportFiles(scheduleImport, files, selectedWeekStart)
 
     // Real dry-run against the same RPC that will publish — the preview is
     // now backed by what the write path actually does, not only by the

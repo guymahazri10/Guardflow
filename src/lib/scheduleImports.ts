@@ -82,6 +82,27 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
+export const UPLOAD_TIMEOUT_MS = 45_000
+
+/** Rejects with `message` if `promise` has not settled in `ms`. A storage
+ *  request that stalls (observed after a denied upsert) must end the import
+ *  with a visible error instead of leaving the wizard on "processing". */
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
+
 export async function uploadScheduleFile(
   file: File,
   weekStart: string,
@@ -94,9 +115,11 @@ export async function uploadScheduleFile(
   // resumes the existing schedule_imports row (see createScheduleImport),
   // which reuses the same storage_path/import id, so re-uploading the same
   // bytes to that path must not fail as a conflict.
-  const { error } = await supabase.storage.from('schedule-imports').upload(storagePath, file, {
-    upsert: true,
-  })
+  const { error } = await withTimeout(
+    supabase.storage.from('schedule-imports').upload(storagePath, file, { upsert: true }),
+    UPLOAD_TIMEOUT_MS,
+    'העלאת הקובץ לא הסתיימה בזמן סביר. לא בוצע שינוי בסידור — ניתן לנסות שוב.',
+  )
 
   if (error) {
     throw new Error(getErrorMessage('Failed to upload schedule file', error))
@@ -160,6 +183,34 @@ export async function updateScheduleImportStoragePath(
   if (error) {
     throw new Error(getErrorMessage('Failed to record schedule import storage path', error))
   }
+}
+
+/**
+ * Stores the uploaded source file(s) for an import row and records the path.
+ *
+ * An identical re-upload (same week + content hash) resumes the existing row,
+ * which already has its file stored from the first time — the bytes are by
+ * definition the same, so nothing is uploaded again. That keeps a repeat
+ * upload from depending on overwriting an existing storage object, which
+ * needs the UPDATE policy of phase20h and which stalled when that policy
+ * was missing. Only a row with no stored path yet (a new import, or one whose
+ * first upload never finished) uploads.
+ */
+export async function storeImportFiles(
+  importRow: Pick<ScheduleImportRow, 'id' | 'storage_path'>,
+  files: File[],
+  weekStart: string,
+): Promise<{ storagePath: string; uploaded: boolean }> {
+  if (importRow.storage_path) return { storagePath: importRow.storage_path, uploaded: false }
+
+  let firstStoragePath: string | null = null
+  for (const file of files) {
+    const { storagePath } = await uploadScheduleFile(file, weekStart, importRow.id)
+    if (firstStoragePath === null) firstStoragePath = storagePath
+  }
+  if (!firstStoragePath) throw new Error('לא נבחר קובץ להעלאה.')
+  await updateScheduleImportStoragePath(importRow.id, firstStoragePath)
+  return { storagePath: firstStoragePath, uploaded: true }
 }
 
 /** PostgREST reports an RPC called with parameters the database function
