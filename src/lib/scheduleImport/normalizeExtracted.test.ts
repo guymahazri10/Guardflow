@@ -79,8 +79,7 @@ describe('normalizeExtractedAssignments', () => {
     ], REFERENCE)
     expect(assignments).toHaveLength(1)
     expect(assignments[0].slot_index).toBe(0)
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0].kind).toBe('duplicate_slot')
+    expect(warnings.filter((w) => w.kind === 'duplicate_slot')).toHaveLength(1)
   })
 
   it('still keeps two genuinely different workers at the same position and hours', () => {
@@ -127,12 +126,27 @@ describe('normalizeExtractedAssignments', () => {
     expect(warnings[0].message).toContain('עמדה מומצאת')
   })
 
-  it('rejects an excluded section leaking through as a worker kind', () => {
-    const { assignments, warnings } = normalizeExtractedAssignments([
-      record({ worker_kind: 'בקרה', position: 'בוקר בקרה 1' }),
+  it('excludes control and absence records and counts them with a reason, never as workers', () => {
+    const { assignments, warnings, summary } = normalizeExtractedAssignments([
+      record({ worker_kind: 'בקרה', position: 'בוקר בקרה 1', name: 'בקר א' }),
+      record({ worker_kind: 'בקרה', position: 'לילה בקרה', name: 'בקר ב' }),
+      record({ worker_kind: 'קורס', position: 'קורס', name: 'חניך' }),
+      record({ worker_kind: 'מאבטח', position: 'AB', start: '06:45', end: '15:10', name: 'בקר א', shift: 'בוקר' }),
     ], REFERENCE)
+    // the same name in the control group does not stop it being imported as a guard
+    expect(assignments.map((a) => [a.worker_kind, a.source_name])).toEqual([['מאבטח', 'בקר א']])
+    expect(warnings.some((w) => w.message.includes('סוג עובד לא מזוהה'))).toBe(false)
+    expect(summary.included).toBe(1)
+    expect(summary.excluded).toEqual([
+      { section: 'בקרה', reason: 'קבוצת בקרה — לא נכללת בסידור', count: 2 },
+      { section: 'קורס', reason: 'היעדרות (קורס) — לא נכללת בסידור', count: 1 },
+    ])
+  })
+
+  it('still warns on a genuinely unknown worker kind', () => {
+    const { assignments, warnings } = normalizeExtractedAssignments([record({ worker_kind: 'מנהלה' })], REFERENCE)
     expect(assignments).toHaveLength(0)
-    expect(warnings[0].message).toContain('בקרה')
+    expect(warnings[0].message).toContain('לא מזוהה')
   })
 
   it('rejects malformed dates and times instead of dropping them silently', () => {
@@ -196,6 +210,73 @@ describe('normalizeExtractedAssignments', () => {
       // Everything else in the canonical list is reported as missing.
       expect(coverage.positionsMissing.length).toBeGreaterThan(0)
       expect(coverage.positionsMissing.some((p) => p.position === 'AB')).toBe(true)
+    })
+  })
+
+  describe('category: explicit first, hours only as a flagged fallback', () => {
+    it('uses an explicit Hebrew or English category and does not warn, even when the hours would say otherwise', () => {
+      const { assignments, warnings } = normalizeExtractedAssignments([
+        record({ shift: 'בוקר', start: '06:30', end: '15:00' }),
+        record({ shift: 'צהריים', start: '14:30', end: '23:00', name: 'ב' }),
+        record({ shift: 'night', start: '22:30', end: '07:00', name: 'ג' }),
+      ], REFERENCE)
+      expect(assignments.map((a) => a.shift_category)).toEqual(['morning', 'afternoon', 'night'])
+      expect(warnings.some((w) => w.kind === 'category_guessed_from_hours')).toBe(false)
+    })
+
+    it('does not move an early-starting afternoon shift into the morning', () => {
+      // 14:30 start is well inside what the hour classifier calls afternoon,
+      // but the point is the explicit title wins for an odd start as well.
+      const { assignments } = normalizeExtractedAssignments([record({ shift: 'צהריים', start: '12:30', end: '19:00' })], REFERENCE)
+      expect(assignments[0].shift_category).toBe('afternoon')
+    })
+
+    it('falls back to the start hour with an acknowledgement-required warning carrying the original hours', () => {
+      const { assignments, warnings } = normalizeExtractedAssignments([record({ start: '06:45', end: '15:10' })], REFERENCE)
+      expect(assignments[0].shift_category).toBe('morning')
+      const guessed = warnings.filter((w) => w.kind === 'category_guessed_from_hours')
+      expect(guessed).toHaveLength(1)
+      expect(guessed[0].original_hours).toBe('06:45-15:10')
+    })
+  })
+
+  describe('hours are kept as read', () => {
+    it('keeps a partial shift exactly and does not warn when it sits inside the window', () => {
+      const { assignments, warnings } = normalizeExtractedAssignments([
+        record({ shift: 'צהריים', start: '14:45', end: '19:00' }),
+      ], REFERENCE)
+      expect(assignments[0].ends_at).toBe('2026-08-30T16:00:00.000Z') // 19:00 Israel, not padded to 23:00
+      expect(warnings.some((w) => w.kind.startsWith('unusual'))).toBe(false)
+    })
+
+    it('flags unusual hours and duration with the original hours, and does not change them', () => {
+      const { assignments, warnings } = normalizeExtractedAssignments([
+        record({ shift: 'בוקר', start: '06:30', end: '19:00' }),
+      ], REFERENCE)
+      expect(assignments[0].ends_at).toBe('2026-08-30T16:00:00.000Z')
+      expect(warnings.find((w) => w.kind === 'unusual_shift_hours')?.original_hours).toBe('06:30-19:00')
+      expect(warnings.some((w) => w.kind === 'unusual_shift_duration')).toBe(true)
+    })
+  })
+
+  describe('two workers in one position', () => {
+    it('keeps two different guards at one post as slot_index 0 and 1', () => {
+      const { assignments } = normalizeExtractedAssignments([
+        record({ worker_kind: 'מאבטח', position: 'לובי עליון', shift: 'בוקר', start: '06:45', end: '15:10', name: 'א' }),
+        record({ worker_kind: 'מאבטח', position: 'לובי עליון', shift: 'בוקר', start: '06:45', end: '15:10', name: 'ב' }),
+      ], REFERENCE)
+      expect(assignments.map((a) => [a.slot_index, a.source_name])).toEqual([[0, 'א'], [1, 'ב']])
+    })
+
+    it('accepts one or two night guards and flags a third', () => {
+      const night = (name: string) =>
+        record({ worker_kind: 'מאבטח', position: 'לילה מאבטח', shift: 'לילה', start: '22:45', end: '07:10', name })
+      const two = normalizeExtractedAssignments([night('א'), night('ב')], REFERENCE)
+      expect(two.assignments.map((a) => a.slot_index)).toEqual([0, 1])
+      expect(two.warnings.some((w) => w.kind === 'position_capacity_mismatch')).toBe(false)
+      const three = normalizeExtractedAssignments([night('א'), night('ב'), night('ג')], REFERENCE)
+      expect(three.assignments).toHaveLength(3)
+      expect(three.warnings.filter((w) => w.kind === 'position_capacity_mismatch')).toHaveLength(1)
     })
   })
 })

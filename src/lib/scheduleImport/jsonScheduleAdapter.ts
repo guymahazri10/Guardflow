@@ -1,5 +1,6 @@
 import type { ExtractedAssignment } from './normalizeExtracted'
-import { CANONICAL_POSITIONS } from './positions'
+import { CANONICAL_POSITIONS, NIGHT_GUARD_LABEL } from './positions'
+import { parseExplicitCategory } from './assignmentTime'
 
 /**
  * Adapts a "day-grouped" JSON schedule — the shape a general-purpose AI
@@ -19,7 +20,6 @@ export function looksLikeDayGroupedSchedule(value: unknown): value is { days: un
   return !!value && typeof value === 'object' && Array.isArray((value as { days?: unknown }).days)
 }
 
-const NIGHT_GUARD_POSITION_GUESS_ORDER = ['לובי עליון', 'לובי תחתון']
 
 export type DayGroupedAdaptResult = {
   records: ExtractedAssignment[]
@@ -70,9 +70,27 @@ function adaptDay(
     const rowLabel = `${dateMmDd} · ${role || '?'}`
     const normalizedArea = normalizeArea(area)
 
+    // The shift the source itself states: an explicit field if the JSON has
+    // one, otherwise the period word in the free-text role ("בוקר מאבטח AB").
+    // Left undefined when neither names one — normalizeExtractedAssignments
+    // then falls back to the hours and flags the guess.
+    const shiftSource = [entry.shift, entry.shift_category, entry.category, role]
+      .map((v) => parseExplicitCategory(v))
+      .find((v) => v !== null)
+    const shift = shiftSource ?? undefined
+
     if (normalizedArea === 'אחמ"ש') {
       for (const name of names) {
-        records.push({ date: isoDate, worker_kind: 'אחמ"ש', position: 'אחמ"ש', start, end, name })
+        records.push({ date: isoDate, worker_kind: 'אחמ"ש', position: 'אחמ"ש', start, end, name, shift })
+      }
+      continue
+    }
+
+    // Control and the absence groups are carried through as their own kind so
+    // the normalizer can count and exclude them with a reason.
+    if (['בקרה', 'היעדרויות', 'חופש', 'מחלה', 'מילואים', 'קורס', 'לימודים', 'תגבור'].includes(normalizedArea)) {
+      for (const name of names) {
+        records.push({ date: isoDate, worker_kind: normalizedArea, position: role, start, end, name, shift })
       }
       continue
     }
@@ -91,30 +109,19 @@ function adaptDay(
 
     if (found) {
       for (const name of names) {
-        records.push({ date: isoDate, worker_kind: 'מאבטח', position: found, start, end, name })
+        records.push({ date: isoDate, worker_kind: 'מאבטח', position: found, start, end, name, shift })
       }
       continue
     }
 
-    // "לילה מאבטח" catch-all: two guards, but the source doesn't say which
-    // one is לובי עליון vs לובי תחתון at night — that split only exists in
-    // our canonical list, not in this JSON's own structure. Guessing by
-    // array order beats dropping both people, but it IS a guess, so it's
-    // always flagged rather than silently accepted.
-    if (role.includes('לילה') && names.length > 0) {
-      names.slice(0, NIGHT_GUARD_POSITION_GUESS_ORDER.length).forEach((name, i) => {
-        records.push({
-          date: isoDate,
-          worker_kind: 'מאבטח',
-          position: NIGHT_GUARD_POSITION_GUESS_ORDER[i],
-          start,
-          end,
-          name,
-        })
-      })
-      warnings.push(
-        `שיוך משוער (${rowLabel}): לא צוינה עמדה ספציפית לכל עובד לילה — שויכו לפי סדר ל-${NIGHT_GUARD_POSITION_GUESS_ORDER.join(' / ')}. יש לוודא ידנית בתצוגה המקדימה.`,
-      )
+    // "לילה מאבטח": the night guards are one role with up to two names, not
+    // two physical posts — so every name is kept under that role, in order
+    // (slot_index 0, 1). Nothing is guessed. A third name is flagged by the
+    // normalizer as a capacity mismatch rather than dropped here.
+    if (role.includes('לילה')) {
+      for (const name of names) {
+        records.push({ date: isoDate, worker_kind: 'מאבטח', position: NIGHT_GUARD_LABEL, start, end, name, shift: shift ?? 'night' })
+      }
       continue
     }
 

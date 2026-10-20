@@ -1,6 +1,19 @@
-import type { NormalizedAssignment, ValidationWarning, WorkerKind } from './types'
-import { classifyCategory, israelRangeToUtc } from './assignmentTime'
-import { CANONICAL_POSITIONS, isKnownPosition } from './positions'
+import type {
+  ExcludedGroupSummary,
+  NormalizedAssignment,
+  NormalizeSummary,
+  ValidationWarning,
+  WorkerKind,
+} from './types'
+import {
+  MAX_PLAUSIBLE_SHIFT_MINUTES,
+  checkShiftEnvelope,
+  classifyCategory,
+  israelRangeToUtc,
+  parseExplicitCategory,
+} from './assignmentTime'
+import { CANONICAL_POSITIONS, NIGHT_GUARD_LABEL, NIGHT_GUARD_ROLE, isKnownPosition, resolveGuardPosition } from './positions'
+import { hasPositiveDuration, isValidCalendarDate, isValidHourRange } from './validateShiftFields'
 
 /**
  * One assignment exactly as the parse function is asked to return it — each
@@ -22,12 +35,26 @@ export type ExtractedAssignment = {
   start: string // HH:MM
   end: string // HH:MM
   name: string
+  /** Explicit shift category the source states for this row ("בוקר",
+   *  "צהריים", "לילה", or "morning"/"afternoon"/"night"). Preferred over the
+   *  hours; when absent the category is guessed from the start hour and the
+   *  guess is flagged for confirmation. */
+  shift?: string
 }
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
 const TIME_PATTERN = /^(\d{1,2}):(\d{2})$/
 
 const VALID_WORKER_KINDS: WorkerKind[] = ['אחמ"ש', 'מאבטח']
+
+// Groups that are never part of the schedule. A record naming one is counted
+// and left out with its reason — never classified as a worker, never silent.
+const EXCLUDED_KINDS = new Set(['בקרה', 'היעדרויות', 'חופש', 'מחלה', 'מילואים', 'קורס', 'לימודים', 'תגבור'])
+
+function excludedLabel(raw: string): string | null {
+  const normalized = raw.trim().replace(/\s+/g, ' ')
+  return EXCLUDED_KINDS.has(normalized) ? normalized : null
+}
 
 function normalizeWorkerKind(raw: string): WorkerKind | null {
   // Hebrew quote marks vary (geresh/gershayim vs ASCII), so compare normalized.
@@ -38,6 +65,7 @@ function normalizeWorkerKind(raw: string): WorkerKind | null {
 export type NormalizeExtractedResult = {
   assignments: NormalizedAssignment[]
   warnings: ValidationWarning[]
+  summary: NormalizeSummary
   /** Which (worker kind, position) pairs actually appeared, and on how many
    *  distinct dates — drives the preview's coverage report so a cropped or
    *  partial screenshot is visible immediately rather than showing up as a
@@ -109,9 +137,21 @@ export function normalizeExtractedAssignments(
   // is the reliable signal — and it's cheap to catch here regardless of
   // which image path produced it.
   const seenExact = new Set<string>()
+  const excludedCounts = new Map<string, ExcludedGroupSummary>()
 
   for (const record of records) {
     const rowLabel = `${record.date ?? '?'} · ${record.position ?? '?'}`
+
+    const excluded = excludedLabel(record.worker_kind ?? '')
+    if (excluded) {
+      if ((record.name ?? '').trim() !== '') {
+        const reason = excluded === 'בקרה' ? 'קבוצת בקרה — לא נכללת בסידור' : `היעדרות (${excluded}) — לא נכללת בסידור`
+        const existing = excludedCounts.get(excluded)
+        if (existing) existing.count += 1
+        else excludedCounts.set(excluded, { section: excluded, reason, count: 1 })
+      }
+      continue
+    }
 
     const workerKind = normalizeWorkerKind(record.worker_kind ?? '')
     if (!workerKind) {
@@ -123,7 +163,8 @@ export function normalizeExtractedAssignments(
     }
 
     const position = (record.position ?? '').trim()
-    if (!isKnownPosition(workerKind, position)) {
+    const isNightGuardRole = workerKind === 'מאבטח' && position === NIGHT_GUARD_LABEL
+    if (!isNightGuardRole && !isKnownPosition(workerKind, position)) {
       warnings.push({
         kind: 'low_confidence_ocr',
         message: `שורה דולגה (${rowLabel}): עמדה לא מוכרת "${position}" עבור ${workerKind}.`,
@@ -167,7 +208,7 @@ export function normalizeExtractedAssignments(
     const endHour = Number(endMatch[1])
     const endMinute = Number(endMatch[2])
 
-    if (startHour > 23 || endHour > 23 || startMinute > 59 || endMinute > 59) {
+    if (!isValidHourRange(startHour, startMinute) || !isValidHourRange(endHour, endMinute)) {
       warnings.push({
         kind: 'low_confidence_ocr',
         message: `שורה דולגה (${rowLabel}): שעה מחוץ לטווח "${record.start}-${record.end}".`,
@@ -178,8 +219,27 @@ export function normalizeExtractedAssignments(
     }
 
     // Only the day and month are taken from the model — see anchorYear.
-    const workDate = anchorYear(Number(dateMatch[2]), Number(dateMatch[3]), reference)
-    const shiftCategory = classifyCategory(startHour)
+    const extractedMonth = Number(dateMatch[2])
+    const extractedDay = Number(dateMatch[3])
+    const workDate = anchorYear(extractedMonth, extractedDay, reference)
+
+    // anchorYear rolls an impossible day/month (e.g. "02-30") forward into a
+    // real date instead of rejecting it — catch that here by checking the
+    // result still lands on the same month/day that was extracted.
+    if (!isValidCalendarDate(workDate.getUTCFullYear(), workDate.getUTCMonth() + 1, workDate.getUTCDate())
+      || workDate.getUTCMonth() + 1 !== extractedMonth || workDate.getUTCDate() !== extractedDay) {
+      warnings.push({
+        kind: 'low_confidence_ocr',
+        message: `שורה דולגה (${rowLabel}): תאריך לא קיים בלוח השנה "${record.date ?? ''}".`,
+        position,
+      })
+      continue
+    }
+
+    // An explicit category from the source wins; hours are only a fallback,
+    // and a category guessed that way is flagged for the manager to confirm.
+    const explicitCategory = parseExplicitCategory(record.shift)
+    const shiftCategory = explicitCategory ?? classifyCategory(startHour)
     const { starts_at, ends_at } = israelRangeToUtc(
       workDate,
       startHour,
@@ -187,6 +247,16 @@ export function normalizeExtractedAssignments(
       endHour,
       endMinute,
     )
+
+    if (!hasPositiveDuration(starts_at, ends_at)) {
+      warnings.push({
+        kind: 'low_confidence_ocr',
+        message: `שורה דולגה (${rowLabel}): משך משמרת לא חיובי "${record.start}-${record.end}".`,
+        work_date: record.date,
+        position,
+      })
+      continue
+    }
 
     const workDateIso = workDate.toISOString().slice(0, 10)
     const slotKey = `${workDateIso}|${shiftCategory}|${position}`
@@ -206,6 +276,50 @@ export function normalizeExtractedAssignments(
     const slotIndex = slotCounters.get(slotKey) ?? 0
     slotCounters.set(slotKey, slotIndex + 1)
 
+    const originalHours = `${String(startHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}-${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`
+    const identity = { work_date: workDateIso, position, shift_category: shiftCategory, slot_index: slotIndex }
+
+    if (!explicitCategory) {
+      warnings.push({
+        kind: 'category_guessed_from_hours',
+        message: `לשורה ${rowLabel} לא צוינה משמרת (בוקר/צהריים/לילה) — הקטגוריה נקבעה לפי שעת ההתחלה בלבד (${originalHours}).`,
+        ...identity,
+        original_hours: originalHours,
+      })
+    }
+
+    const { outsideWindow, durationMinutes } = checkShiftEnvelope(
+      shiftCategory,
+      startHour,
+      startMinute,
+      endHour,
+      endMinute,
+    )
+    if (outsideWindow) {
+      warnings.push({
+        kind: 'unusual_shift_hours',
+        message: `שעות חריגות: ${position} ${workDateIso} (${name}) ${originalHours} חורגות מחלון המשמרת. השעות נשמרו כפי שהן ללא תיקון.`,
+        ...identity,
+        original_hours: originalHours,
+      })
+    }
+    if (durationMinutes > MAX_PLAUSIBLE_SHIFT_MINUTES) {
+      warnings.push({
+        kind: 'unusual_shift_duration',
+        message: `משך חריג: ${position} ${workDateIso} (${name}) ${originalHours} (${Math.round((durationMinutes / 60) * 10) / 10} שעות). השעות נשמרו כפי שהן ללא תיקון.`,
+        ...identity,
+        original_hours: originalHours,
+      })
+    }
+    if (isNightGuardRole && resolveGuardPosition(position, slotIndex) === 'capacity_exceeded') {
+      warnings.push({
+        kind: 'position_capacity_mismatch',
+        message: `שיבוץ "${position}" (${workDateIso}) חורג ממספר המקומות הידוע (${NIGHT_GUARD_ROLE.maxCapacity}) — נדרשת בדיקה לפני פרסום.`,
+        work_date: workDateIso,
+        position,
+      })
+    }
+
     assignments.push({
       work_date: workDateIso,
       shift_category: shiftCategory,
@@ -218,7 +332,12 @@ export function normalizeExtractedAssignments(
     })
   }
 
-  return { assignments, warnings, coverage: buildCoverage(assignments) }
+  return {
+    assignments,
+    warnings,
+    summary: { included: assignments.length, excluded: Array.from(excludedCounts.values()), emptyCells: 0 },
+    coverage: buildCoverage(assignments),
+  }
 }
 
 function buildCoverage(assignments: NormalizedAssignment[]): NormalizeExtractedResult['coverage'] {

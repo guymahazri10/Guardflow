@@ -62,7 +62,7 @@ describe('parseImageSchedule', () => {
       expect.objectContaining({
         body: expect.objectContaining({
           mimeType: 'image/jpeg',
-          positions: CANONICAL_POSITIONS,
+          positions: { ...CANONICAL_POSITIONS, מאבטח: [...CANONICAL_POSITIONS['מאבטח'], 'לילה מאבטח'] },
         }),
       }),
     )

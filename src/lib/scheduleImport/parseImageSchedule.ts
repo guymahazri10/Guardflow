@@ -2,7 +2,7 @@ import { FunctionsHttpError } from '@supabase/supabase-js'
 import { supabase } from '../supabase'
 import type { ValidationWarning } from './types'
 import type { ExtractedAssignment } from './normalizeExtracted'
-import { CANONICAL_POSITIONS } from './positions'
+import { CANONICAL_POSITIONS, NIGHT_GUARD_LABEL } from './positions'
 
 /**
  * Image import asks the parse-schedule-image edge function (Gemini) for the
@@ -61,7 +61,9 @@ async function parseOneImage(
     body: {
       imageBase64: bytesToBase64(bytes),
       mimeType,
-      positions: CANONICAL_POSITIONS,
+      // The night guard role is not a physical post (so it is not in
+      // CANONICAL_POSITIONS) but is a valid label for the model to return.
+      positions: { ...CANONICAL_POSITIONS, מאבטח: [...CANONICAL_POSITIONS['מאבטח'], NIGHT_GUARD_LABEL] },
     },
   })
 

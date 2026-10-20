@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { looksLikeDayGroupedSchedule, adaptDayGroupedSchedule } from './jsonScheduleAdapter'
+import { normalizeExtractedAssignments } from './normalizeExtracted'
 
 describe('looksLikeDayGroupedSchedule', () => {
   it('recognizes an object with a days array', () => {
@@ -31,7 +32,7 @@ describe('adaptDayGroupedSchedule', () => {
     )
     expect(warnings).toHaveLength(0)
     expect(records).toEqual([
-      { date: '2026-09-06', worker_kind: 'אחמ"ש', position: 'אחמ"ש', start: '06:30', end: '15:10', name: 'רן ברגרפרוינד' },
+      { date: '2026-09-06', worker_kind: 'אחמ"ש', position: 'אחמ"ש', start: '06:30', end: '15:10', name: 'רן ברגרפרוינד', shift: 'morning' },
     ])
   })
 
@@ -96,32 +97,25 @@ describe('adaptDayGroupedSchedule', () => {
   // our canonical list only has לובי עליון/לובי תחתון for night, not a
   // catch-all "לילה" position. Best-effort assigns by array order and
   // always flags it, since it's a guess, not a resolved fact.
-  it('guesses לובי עליון/לובי תחתון by order for the ambiguous "לילה מאבטח" role, with a warning', () => {
+  it('keeps the night guards under one role, in order, with no guessed post', () => {
     const { records, warnings } = adaptDayGroupedSchedule(
       {
         days: [
           {
             date: '09-06',
             assignments: [
-              {
-                area: 'מאבטח',
-                role: 'לילה מאבטח',
-                start: '22:45',
-                end: '07:10',
-                employees: ['נדב מלכו', 'ציון יממה'],
-              },
+              { area: 'מאבטח', role: 'לילה מאבטח', start: '22:45', end: '07:10', employees: ['נדב מלכו', 'ציון יממה'] },
             ],
           },
         ],
       },
       2026,
     )
-    expect(records).toEqual([
-      { date: '2026-09-06', worker_kind: 'מאבטח', position: 'לובי עליון', start: '22:45', end: '07:10', name: 'נדב מלכו' },
-      { date: '2026-09-06', worker_kind: 'מאבטח', position: 'לובי תחתון', start: '22:45', end: '07:10', name: 'ציון יממה' },
+    expect(records.map((r) => [r.position, r.name, r.shift])).toEqual([
+      ['לילה מאבטח', 'נדב מלכו', 'night'],
+      ['לילה מאבטח', 'ציון יממה', 'night'],
     ])
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('לילה')
+    expect(warnings).toHaveLength(0)
   })
 
   it('warns and skips a role with no recognizable position and no "לילה" fallback', () => {
@@ -150,13 +144,47 @@ describe('adaptDayGroupedSchedule', () => {
     expect(warnings).toHaveLength(1)
   })
 
-  it('warns on an unrecognized worker kind rather than silently dropping it', () => {
+  it('carries control and absence rows through as excluded kinds so they can be counted', () => {
     const { records, warnings } = adaptDayGroupedSchedule(
       {
         days: [
           {
             date: '09-06',
-            assignments: [{ area: 'בקרה', role: 'בוקר בקרה', start: '06:45', end: '15:10', employee: 'א' }],
+            assignments: [
+              { area: 'בקרה', role: 'בוקר בקרה', start: '06:45', end: '15:10', employee: 'א' },
+              { area: 'קורס', role: 'קורס', start: '08:00', end: '18:00', employee: 'ב' },
+            ],
+          },
+        ],
+      },
+      2026,
+    )
+    expect(records.map((r) => r.worker_kind)).toEqual(['בקרה', 'קורס'])
+    expect(warnings).toHaveLength(0)
+  })
+
+  it('uses an explicit shift field when the JSON has one, ahead of the role text', () => {
+    const { records } = adaptDayGroupedSchedule(
+      {
+        days: [
+          {
+            date: '09-06',
+            assignments: [{ area: 'מאבטח', role: 'AB', shift: 'צהריים', start: '14:45', end: '23:10', employee: 'א' }],
+          },
+        ],
+      },
+      2026,
+    )
+    expect(records[0].shift).toBe('afternoon')
+  })
+
+  it('warns on a genuinely unrecognized area rather than silently dropping it', () => {
+    const { records, warnings } = adaptDayGroupedSchedule(
+      {
+        days: [
+          {
+            date: '09-06',
+            assignments: [{ area: 'מנהלה', role: 'בוקר', start: '06:45', end: '15:10', employee: 'א' }],
           },
         ],
       },
@@ -164,5 +192,35 @@ describe('adaptDayGroupedSchedule', () => {
     )
     expect(records).toHaveLength(0)
     expect(warnings[0]).toContain('לא מזוהה')
+  })
+
+  it('end to end: adapter then normalizer gives title categories, excludes control, keeps stacked workers and partial hours', () => {
+    const { records } = adaptDayGroupedSchedule(
+      {
+        days: [
+          {
+            date: '10-18',
+            assignments: [
+              { area: 'אחמ"ש', role: 'אחמ"ש צהריים', start: '14:45', end: '19:00', employee: 'א' },
+              { area: 'מאבטח', role: 'בוקר מאבטח 06:45-15:10 לובי עליון - חמוש', start: '06:45', end: '15:10', employees: ['ב', 'ג'] },
+              { area: 'מאבטח', role: 'לילה מאבטח', start: '22:45', end: '07:10', employees: ['ד'] },
+              { area: 'בקרה', role: 'בוקר בקרה 1', start: '06:45', end: '15:10', employee: 'א' },
+              { area: 'קורס', role: 'קורס', start: '08:00', end: '18:00', employee: 'ה' },
+            ],
+          },
+        ],
+      },
+      2026,
+    )
+    const result = normalizeExtractedAssignments(records, new Date('2026-10-18T00:00:00.000Z'))
+    expect(result.assignments.map((a) => [a.position, a.shift_category, a.slot_index, a.source_name])).toEqual([
+      ['אחמ"ש', 'afternoon', 0, 'א'],
+      ['לובי עליון', 'morning', 0, 'ב'],
+      ['לובי עליון', 'morning', 1, 'ג'],
+      ['לילה מאבטח', 'night', 0, 'ד'],
+    ])
+    expect(result.assignments[0].ends_at).toBe('2026-10-18T16:00:00.000Z')
+    expect(result.summary.excluded.map((g) => [g.section, g.count])).toEqual([['בקרה', 1], ['קורס', 1]])
+    expect(result.warnings.filter((w) => w.kind === 'category_guessed_from_hours')).toHaveLength(0)
   })
 })
