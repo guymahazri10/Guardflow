@@ -93,3 +93,46 @@ describe('createScheduleImport on an identical upload', () => {
     fromImpl = () => ({ update: (...args: unknown[]) => update(...args) })
   })
 })
+
+describe('setScheduleImportStatus', () => {
+  function captureUpdate(error: unknown = null) {
+    const calls: { patch?: unknown; id?: unknown; allowed?: unknown } = {}
+    fromImpl = () => ({
+      update: (patch: unknown) => {
+        calls.patch = patch
+        return {
+          eq: (_col: string, id: unknown) => {
+            calls.id = id
+            return { in: (_c: string, allowed: unknown) => { calls.allowed = allowed; return Promise.resolve({ error }) } }
+          },
+        }
+      },
+    })
+    return calls
+  }
+
+  it('moves a finished preview to ready_for_review, only from non-published statuses', async () => {
+    const { setScheduleImportStatus } = await import('./scheduleImports')
+    const calls = captureUpdate()
+    await setScheduleImportStatus('imp', 'ready_for_review')
+    expect(calls.patch).toMatchObject({ status: 'ready_for_review' })
+    expect(calls.id).toBe('imp')
+    expect(calls.allowed).not.toContain('published')
+    expect(calls.allowed).toContain('processing')
+  })
+
+  it('never lets failed or cancelled overwrite a published import', async () => {
+    const { setScheduleImportStatus } = await import('./scheduleImports')
+    for (const status of ['failed', 'cancelled'] as const) {
+      const calls = captureUpdate()
+      await setScheduleImportStatus('imp', status)
+      expect(calls.allowed).not.toContain('published')
+    }
+  })
+
+  it('reports an update error', async () => {
+    const { setScheduleImportStatus } = await import('./scheduleImports')
+    captureUpdate({ message: 'denied' })
+    await expect(setScheduleImportStatus('imp', 'cancelled')).rejects.toThrow('denied')
+  })
+})

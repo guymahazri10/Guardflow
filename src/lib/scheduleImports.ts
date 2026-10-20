@@ -185,6 +185,37 @@ export async function updateScheduleImportStoragePath(
   }
 }
 
+// Which current statuses each transition may start from. 'published' is never
+// listed: an import that was published is never moved back by the client (an
+// identical re-upload resumes the same row and must leave it published).
+const STATUS_TRANSITIONS: Record<'ready_for_review' | 'failed' | 'cancelled', ScheduleImportRow['status'][]> = {
+  ready_for_review: ['processing', 'ready_for_review', 'failed', 'cancelled'],
+  failed: ['processing'],
+  cancelled: ['processing', 'ready_for_review', 'failed'],
+}
+
+/**
+ * Keeps an import row's status truthful while it is not published. The publish
+ * RPC sets 'published' itself, and its dry-run is deliberately write-free
+ * (phase20k), so without this a row whose preview finished — or failed, or was
+ * cancelled — stayed 'processing' forever. Conditional on the current status,
+ * so it can never downgrade a published import.
+ */
+export async function setScheduleImportStatus(
+  importId: string,
+  status: 'ready_for_review' | 'failed' | 'cancelled',
+): Promise<void> {
+  const { error } = await supabase
+    .from('schedule_imports')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', importId)
+    .in('status', STATUS_TRANSITIONS[status])
+
+  if (error) {
+    throw new Error(getErrorMessage('Failed to update schedule import status', error))
+  }
+}
+
 /**
  * Stores the uploaded source file(s) for an import row and records the path.
  *

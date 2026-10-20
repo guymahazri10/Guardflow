@@ -29,6 +29,7 @@ import {
   computeContentHash,
   createScheduleImport,
   storeImportFiles,
+  setScheduleImportStatus,
   fetchShiftAssignmentsForWeek,
   callPublishScheduleImport,
   type PublishResult,
@@ -171,6 +172,15 @@ export function ScheduleImportPage() {
     return null
   }
 
+  // Best effort: a status label must never turn a good import into an error.
+  async function markStatus(id: string, status: 'ready_for_review' | 'failed' | 'cancelled') {
+    try {
+      await setScheduleImportStatus(id, status)
+    } catch (error) {
+      console.warn('Could not update the import status', error)
+    }
+  }
+
   // Shared by all three input paths once each has produced normalized
   // assignments: match -> check the file's week against the manager's chosen
   // week -> validate -> create the schedule_imports row (only once the week
@@ -244,33 +254,41 @@ export function ScheduleImportPage() {
     // file's path is recorded on the row (existing single-column schema) —
     // the rest still land in storage for the manager to review manually if
     // ever needed, just without a dedicated multi-path audit column.
-    // An identical re-upload resumes the stored import and uploads nothing —
-    // see storeImportFiles.
-    await storeImportFiles(scheduleImport, files, selectedWeekStart)
+    try {
+      // An identical re-upload resumes the stored import and uploads nothing —
+      // see storeImportFiles.
+      await storeImportFiles(scheduleImport, files, selectedWeekStart)
 
-    // Real dry-run against the same RPC that will publish — the preview is
-    // now backed by what the write path actually does, not only by the
-    // client-side validateSchedule heuristics above.
-    const diff = await callPublishScheduleImport({
-      importId: scheduleImport.id,
-      assignments: toPublishPayload(validated.assignments, new Set()),
-      resolutions: {},
-      confirmedDeleteIds: [],
-      dryRun: true,
-    })
+      // Real dry-run against the same RPC that will publish — the preview is
+      // now backed by what the write path actually does, not only by the
+      // client-side validateSchedule heuristics above.
+      const diff = await callPublishScheduleImport({
+        importId: scheduleImport.id,
+        assignments: toPublishPayload(validated.assignments, new Set()),
+        resolutions: {},
+        confirmedDeleteIds: [],
+        dryRun: true,
+      })
 
-    setImportId(scheduleImport.id)
-    setAssignments(validated.assignments)
-    setWarnings(combinedWarnings)
-    setConflicts(validated.conflicts)
-    setDetectedWeekStart(selectedWeekStart)
-    // Only warnings for rows that were actually dropped count as "skipped";
-    // review warnings (unusual hours, guessed category) keep their row.
-    setStats({ parseRejected: parseWarnings.filter((w) => w.kind === 'low_confidence_ocr' || w.kind === 'duplicate_slot').length, unmatched_names: validated.stats.unmatched_names })
-    setCoverage(coverageInfo)
-    setSummary(importSummary)
-    setDryRunResult(diff)
-    setStep('preview')
+      setImportId(scheduleImport.id)
+      setAssignments(validated.assignments)
+      setWarnings(combinedWarnings)
+      setConflicts(validated.conflicts)
+      setDetectedWeekStart(selectedWeekStart)
+      // Only warnings for rows that were actually dropped count as "skipped";
+      // review warnings (unusual hours, guessed category) keep their row.
+      setStats({ parseRejected: parseWarnings.filter((w) => w.kind === 'low_confidence_ocr' || w.kind === 'duplicate_slot').length, unmatched_names: validated.stats.unmatched_names })
+      setCoverage(coverageInfo)
+      setSummary(importSummary)
+      setDryRunResult(diff)
+      // The preview is ready: the row is no longer "processing".
+      await markStatus(scheduleImport.id, 'ready_for_review')
+      setStep('preview')
+    } catch (error) {
+      // Any failure after the row exists must not leave it "processing" forever.
+      await markStatus(scheduleImport.id, 'failed')
+      throw error
+    }
   }
 
   async function handleFileSelected(file: File) {
@@ -669,6 +687,7 @@ export function ScheduleImportPage() {
         // result) should leak into a fresh one. Only importId/dryRunResult
         // need clearing here for correctness; the rest is overwritten by
         // finishImport before the preview is ever shown again.
+        if (importId) void markStatus(importId, 'cancelled')
         setImportId(null)
         setDryRunResult(null)
         setStep('selectWeek')
