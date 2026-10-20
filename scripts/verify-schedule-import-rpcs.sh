@@ -2,13 +2,23 @@
 # scripts/verify-schedule-import-rpcs.sh
 #
 # Lightweight, documented, runnable regression check for the
-# publish_schedule_import / replace_assignment_worker RPCs (supabase/phase20c_schedule_import_rpcs.sql).
+# publish_schedule_import / replace_assignment_worker RPCs (supabase/phase20c_schedule_import_rpcs.sql,
+# supabase/phase20j_schedule_import_source_kind_fix.sql, supabase/phase20k_schedule_import_diff_and_safety.sql).
 # This is NOT a full test framework — Postgres RPCs with RLS + security
 # definer + auth.uid() aren't easily unit-tested from Vitest, so this script
 # runs the same kind of psql checks used during manual verification (Task 11
-# Step 3 and the final-review fix pass) and asserts on the output, so future
-# changes to these RPCs can be regression-checked with one command instead of
-# re-deriving these checks by hand.
+# Step 3, the final-review fix pass, and the phase20k diff/safety rewrite)
+# and asserts on the output, so future changes to these RPCs can be
+# regression-checked with one command instead of re-deriving these checks by
+# hand.
+#
+# Checks 1-6 below assert on individual scalar values extracted from psql.
+# Check 7 runs scripts/verify-schedule-import-rpcs.sql, a set of 10 PL/pgSQL
+# DO-block scenarios (T1-T10) covering phase20k's diff correctness, the
+# empty-array/week/delete-confirmation guards, manual-edit preservation, the
+# import_id-scoped delete sweep, and the actual_*/source correction on
+# non-manual re-uploads — each one wrapped in the same all-or-nothing
+# transaction (see that file's header) so nothing persists locally either way.
 #
 # Requires: the local Supabase stack running (`supabase_db_guardflow`
 # container), with the phase20* migrations already applied.
@@ -59,10 +69,10 @@ begin;
 select set_config('request.jwt.claim.sub', '${GUARD_ID}', true);
 select set_config('role', 'authenticated', true);
 select public.publish_schedule_import(
-  gen_random_uuid(),
-  '[]'::jsonb,
-  '{}'::jsonb,
-  true
+  p_import_id => gen_random_uuid(),
+  p_assignments => '[]'::jsonb,
+  p_resolutions => '{}'::jsonb,
+  p_dry_run => true
 );
 rollback;
 SQL
@@ -81,16 +91,16 @@ select set_config('request.jwt.claim.sub', '${MANAGER_ID}', true);
 select set_config('role', 'authenticated', true);
 
 select public.publish_schedule_import(
-  '99999999-0000-0000-0000-000000000001'::uuid,
-  '[{"work_date":"2026-09-06","shift_category":"morning","worker_kind":"מאבטח","position":"עמדת בדיקה","slot_index":0,"starts_at":"2026-09-06T04:00:00Z","ends_at":"2026-09-06T12:00:00Z","source_name":"בדיקה","planned_user_id":null}]'::jsonb,
-  '{}'::jsonb,
-  false
+  p_import_id => '99999999-0000-0000-0000-000000000001'::uuid,
+  p_assignments => '[{"work_date":"2026-09-06","shift_category":"morning","worker_kind":"מאבטח","position":"עמדת בדיקה","slot_index":0,"starts_at":"2026-09-06T04:00:00Z","ends_at":"2026-09-06T12:00:00Z","source_name":"בדיקה","planned_user_id":null}]'::jsonb,
+  p_resolutions => '{}'::jsonb,
+  p_dry_run => false
 );
 select public.publish_schedule_import(
-  '99999999-0000-0000-0000-000000000001'::uuid,
-  '[{"work_date":"2026-09-06","shift_category":"morning","worker_kind":"מאבטח","position":"עמדת בדיקה","slot_index":0,"starts_at":"2026-09-06T04:00:00Z","ends_at":"2026-09-06T12:00:00Z","source_name":"בדיקה","planned_user_id":null}]'::jsonb,
-  '{}'::jsonb,
-  false
+  p_import_id => '99999999-0000-0000-0000-000000000001'::uuid,
+  p_assignments => '[{"work_date":"2026-09-06","shift_category":"morning","worker_kind":"מאבטח","position":"עמדת בדיקה","slot_index":0,"starts_at":"2026-09-06T04:00:00Z","ends_at":"2026-09-06T12:00:00Z","source_name":"בדיקה","planned_user_id":null}]'::jsonb,
+  p_resolutions => '{}'::jsonb,
+  p_dry_run => false
 );
 select count(*) from public.staffing_change_log l
   join public.shift_assignments a on a.id = l.assignment_id
@@ -113,10 +123,10 @@ select set_config('request.jwt.claim.sub', '${MANAGER_ID}', true);
 select set_config('role', 'authenticated', true);
 
 select public.publish_schedule_import(
-  '99999999-0000-0000-0000-000000000002'::uuid,
-  '[{"work_date":"2026-09-06","shift_category":"morning","worker_kind":"מאבטח","position":"עמדת בדיקה 2","slot_index":0,"starts_at":"2026-09-06T04:00:00Z","ends_at":"2026-09-06T12:00:00Z","source_name":"בדיקה","planned_user_id":null}]'::jsonb,
-  '{}'::jsonb,
-  false
+  p_import_id => '99999999-0000-0000-0000-000000000002'::uuid,
+  p_assignments => '[{"work_date":"2026-09-06","shift_category":"morning","worker_kind":"מאבטח","position":"עמדת בדיקה 2","slot_index":0,"starts_at":"2026-09-06T04:00:00Z","ends_at":"2026-09-06T12:00:00Z","source_name":"בדיקה","planned_user_id":null}]'::jsonb,
+  p_resolutions => '{}'::jsonb,
+  p_dry_run => false
 );
 select change_kind from public.staffing_change_log l
   join public.shift_assignments a on a.id = l.assignment_id
@@ -141,10 +151,10 @@ select set_config('request.jwt.claim.sub', '${MANAGER_ID}', true);
 select set_config('role', 'authenticated', true);
 
 select public.publish_schedule_import(
-  '99999999-0000-0000-0000-000000000003'::uuid,
-  '[{"work_date":"2026-09-06","shift_category":"morning","worker_kind":"מאבטח","position":"עמדת בדיקה 3","slot_index":0,"starts_at":"2026-09-06T04:00:00Z","ends_at":"2026-09-06T12:00:00Z","source_name":"שם קובץ חדש","planned_user_id":null}]'::jsonb,
-  '{}'::jsonb,
-  false
+  p_import_id => '99999999-0000-0000-0000-000000000003'::uuid,
+  p_assignments => '[{"work_date":"2026-09-06","shift_category":"morning","worker_kind":"מאבטח","position":"עמדת בדיקה 3","slot_index":0,"starts_at":"2026-09-06T04:00:00Z","ends_at":"2026-09-06T12:00:00Z","source_name":"שם קובץ חדש","planned_user_id":null}]'::jsonb,
+  p_resolutions => '{}'::jsonb,
+  p_dry_run => false
 );
 select actual_name from public.shift_assignments where id = '99999999-1111-0000-0000-000000000003';
 rollback;
@@ -160,18 +170,38 @@ begin;
 insert into public.schedule_imports (id, week_start, source_kind, storage_path, original_filename, content_hash, created_by)
 values ('99999999-0000-0000-0000-000000000004', '2026-09-06', 'excel', 'verify/4.xlsx', 'v4.xlsx', 'verify-hash-4', '${MANAGER_ID}')
 on conflict do nothing;
-insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, source, is_manually_edited, published)
-values ('2026-09-06', 'afternoon', 'מאבטח', 'עמדה ישנה 4', 0, '2026-09-06T12:00:00Z', '2026-09-06T20:00:00Z', 'ישן', 'excel', false, true);
+-- A prior import, standing in for "whatever import created the old row" —
+-- phase20k scopes the delete-sweep to import_id is not null (never sweep a
+-- row with no import at all), so this row needs one to be sweep-eligible.
+insert into public.schedule_imports (id, week_start, source_kind, storage_path, original_filename, content_hash, created_by)
+values ('99999999-0000-0000-0000-000000000099', '2026-09-06', 'excel', 'verify/4-prior.xlsx', 'v4-prior.xlsx', 'verify-hash-4-prior', '${MANAGER_ID}')
+on conflict do nothing;
+insert into public.shift_assignments (id, work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, source, import_id, is_manually_edited, published)
+values ('99999999-3333-0000-0000-000000000004', '2026-09-06', 'afternoon', 'מאבטח', 'עמדה ישנה 4', 0, '2026-09-06T12:00:00Z', '2026-09-06T20:00:00Z', 'ישן', 'excel', '99999999-0000-0000-0000-000000000099', false, true)
+on conflict (id) do nothing;
 
 select set_config('request.jwt.claim.sub', '${MANAGER_ID}', true);
 select set_config('role', 'authenticated', true);
 
--- First element's work_date (09-08) is NOT the week's Sunday (09-06).
+-- Note: no apostrophes and no literal dollar-paren sequences in this comment
+-- block — this heredoc is captured via command substitution, which performs
+-- variable/command expansion on unquoted heredoc bodies. An odd apostrophe
+-- count breaks its scanner with a stray "unexpected EOF", and a literal
+-- dollar-paren pair gets executed as a real (failing) command substitution.
+--
+-- First elements work_date (09-08) is NOT the weeks Sunday (09-06) but is
+-- still within week_start..week_start+6, so the phase20k week-enforcement
+-- check does not reject it; this specifically tests that the sweep uses the
+-- schedule_imports.week_start value rather than assuming index 0 is Sunday.
+-- The old row is now a legitimate to_delete candidate since it has an
+-- import_id, so the phase20k delete-confirmation guard requires confirming
+-- it explicitly below.
 select public.publish_schedule_import(
-  '99999999-0000-0000-0000-000000000004'::uuid,
-  '[{"work_date":"2026-09-08","shift_category":"morning","worker_kind":"מאבטח","position":"עמדה חדשה 4","slot_index":0,"starts_at":"2026-09-08T04:00:00Z","ends_at":"2026-09-08T12:00:00Z","source_name":"חדש","planned_user_id":null}]'::jsonb,
-  '{}'::jsonb,
-  false
+  p_import_id => '99999999-0000-0000-0000-000000000004'::uuid,
+  p_assignments => '[{"work_date":"2026-09-08","shift_category":"morning","worker_kind":"מאבטח","position":"עמדה חדשה 4","slot_index":0,"starts_at":"2026-09-08T04:00:00Z","ends_at":"2026-09-08T12:00:00Z","source_name":"חדש","planned_user_id":null}]'::jsonb,
+  p_resolutions => '{}'::jsonb,
+  p_confirmed_delete_ids => array['99999999-3333-0000-0000-000000000004'::uuid],
+  p_dry_run => false
 );
 select count(*) from public.shift_assignments where position = 'עמדה ישנה 4';
 rollback;
@@ -195,6 +225,22 @@ rollback;
 SQL
 } 2>&1 || true )
 echo "$result" | grep -q 'יכול להחליף רק שיבוץ פעיל' && check "אחמ\"ש rejected from replacing a future (not-yet-active) assignment" "yes" "yes" || check "אחמ\"ש rejected from replacing a future (not-yet-active) assignment" "yes" "no"
+
+echo
+echo "== 7. phase20k diff/safety scenarios (T1-T10, scripts/verify-schedule-import-rpcs.sql) =="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if phase20k_output=$(docker exec -i "${DB_CONTAINER}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 < "${SCRIPT_DIR}/verify-schedule-import-rpcs.sql" 2>&1); then
+  echo "$phase20k_output" | grep '^NOTICE:' | sed 's/^/  /'
+  if echo "$phase20k_output" | grep -q '=== ALL phase20k SCENARIOS PASSED ==='; then
+    check "all 10 phase20k scenarios (T1-T10) passed" "yes" "yes"
+  else
+    echo "$phase20k_output"
+    check "all 10 phase20k scenarios (T1-T10) passed" "yes" "no"
+  fi
+else
+  echo "$phase20k_output"
+  check "all 10 phase20k scenarios (T1-T10) passed" "yes" "no"
+fi
 
 echo
 echo "=========================================="
