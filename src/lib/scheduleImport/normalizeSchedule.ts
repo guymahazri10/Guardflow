@@ -295,7 +295,12 @@ function buildColumnDates(
   weekStart: Date,
 ): { dates: (Date | null)[]; warnings: ValidationWarning[]; headerRowCount: number } {
   let headerRowCount = 0
-  while (headerRowCount < grid.rows.length && !classifyRowTransition(grid.rows[headerRowCount])) {
+  while (
+    headerRowCount < grid.rows.length &&
+    !classifyRowTransition(grid.rows[headerRowCount]) &&
+    // an unrecognized group header is a section, not another header row
+    !isUnknownSectionRow(grid.rows[headerRowCount])
+  ) {
     headerRowCount++
   }
   const headerRows = grid.rows.slice(0, headerRowCount)

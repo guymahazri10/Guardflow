@@ -14,10 +14,18 @@ function parseRealWorkbook(bytes: Uint8Array): RawGrid {
   const sheet = workbook.Sheets[firstSheetName]
   const aoa: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false })
 
-  const rows: RawCell[][] = aoa.map((row) =>
-    row.map((value) => {
+  // A horizontally merged cell is how a real workbook marks a group header
+  // that spans the table; carry it as colspan, same as the HTML path does.
+  const mergedSpans = new Map<string, number>()
+  for (const merge of sheet['!merges'] ?? []) {
+    if (merge.e.c > merge.s.c) mergedSpans.set(`${merge.s.r}:${merge.s.c}`, merge.e.c - merge.s.c + 1)
+  }
+
+  const rows: RawCell[][] = aoa.map((row, r) =>
+    row.map((value, c) => {
       const text = String(value ?? '').trim()
-      return { text, entries: splitEntries(text) }
+      const colspan = mergedSpans.get(`${r}:${c}`)
+      return { text, entries: splitEntries(text), ...(colspan ? { colspan } : {}) }
     }),
   )
 
