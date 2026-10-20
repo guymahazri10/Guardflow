@@ -16,11 +16,8 @@ import { buildPreviewGrid } from '../lib/scheduleImport/previewGrid'
 import { getPublishBlockers } from '../lib/scheduleImport/publishGate'
 import {
   carryOverLinks,
-  linkAssignmentToUser,
-  summarizeNames,
   toPublishPayload,
 } from '../lib/scheduleImport/nameSummary'
-import { normalizeForMatch } from '../lib/scheduleImport/matchNames'
 import {
   ACK_REQUIRED_WARNING_KINDS,
   type MatchedAssignment,
@@ -170,7 +167,6 @@ export function ScheduleImportPage() {
 
   function checkPreconditions(): string | null {
     if (profilesQuery.isLoading) return 'טוען רשימת עובדים, נסה שוב בעוד רגע.'
-    if (profilesQuery.isError) return 'טעינת רשימת העובדים נכשלה. נסה לרענן את הדף.'
     if (!user) return 'יש להתחבר מחדש כדי להעלות קובץ.'
     return null
   }
@@ -724,15 +720,6 @@ function CoverageReport({ coverage }: { coverage: NormalizeExtractedResult['cove
   )
 }
 
-function SummaryMetric({ value, text, tone }: { value: number; text: string; tone?: 'good' }) {
-  return (
-    <div className="card px-3 py-2.5 text-center">
-      <p className={`text-xl font-extrabold tabular-nums ${tone === 'good' ? 'text-good' : 'text-text-primary'}`}>{value}</p>
-      <p className="text-xs text-text-secondary">{text}</p>
-    </div>
-  )
-}
-
 function StatChip({ label, value, tone }: { label: string; value: number; tone: 'good' | 'neutral' | 'warning' }) {
   const toneClasses =
     tone === 'good'
@@ -755,81 +742,6 @@ function warningKey(w: ValidationWarning): string {
 
 function identityKey(a: { work_date: string; shift_category: string; position: string; slot_index: number }): string {
   return `${a.work_date}|${a.shift_category}|${a.position}|${a.slot_index}`
-}
-
-const selectFieldClass =
-  'bg-white border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary transition'
-
-function MatchConfidenceCell({
-  assignment,
-  profiles,
-  isConfirmed,
-  onAssignExisting,
-  onConfirmFuzzy,
-}: {
-  assignment: MatchedAssignment
-  profiles: { id: string; full_name: string | null }[]
-  isConfirmed: boolean
-  onAssignExisting: (userId: string) => void
-  onConfirmFuzzy: () => void
-}) {
-  if (assignment.match_confidence === 'exact') {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs font-bold text-good bg-good-light rounded-badge px-2 py-0.5">
-        <CheckCircleIcon className="w-3.5 h-3.5" />
-        מדויק
-      </span>
-    )
-  }
-
-  if (assignment.match_confidence === 'fuzzy') {
-    return (
-      <div className="flex items-center gap-1.5">
-        <select
-          className={selectFieldClass}
-          onChange={(e) => onAssignExisting(e.target.value)}
-          defaultValue=""
-        >
-          <option value="" disabled>
-            אישור התאמה
-          </option>
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.full_name}
-            </option>
-          ))}
-        </select>
-        {!isConfirmed ? (
-          <button
-            type="button"
-            className="text-xs font-bold text-warning bg-warning-light rounded-lg px-2 py-1.5 active:opacity-70"
-            onClick={onConfirmFuzzy}
-          >
-            אישור
-          </button>
-        ) : (
-          <span className="text-xs font-bold text-good">✓ אושר</span>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <select
-      className={selectFieldClass}
-      onChange={(e) => onAssignExisting(e.target.value)}
-      defaultValue=""
-    >
-      <option value="" disabled>
-        לא מקושר — קשר למשתמש
-      </option>
-      {profiles.map((p) => (
-        <option key={p.id} value={p.id}>
-          {p.full_name}
-        </option>
-      ))}
-    </select>
-  )
 }
 
 function SchedulePreview({
@@ -860,11 +772,6 @@ function SchedulePreview({
   // publish_schedule_import expects) of conflicting rows the manager has
   // explicitly chosen to overwrite from the file (Important #5).
   const [overrides, setOverrides] = useState<Set<string>>(new Set())
-  // Identity keys of fuzzy-match rows the manager has explicitly looked at —
-  // either by picking a (possibly different) profile from the select, or by
-  // clicking "אישור" to keep the suggested match. Publish is blocked while any
-  // fuzzy row hasn't been confirmed this way (Important #6).
-  const [confirmedFuzzy, setConfirmedFuzzy] = useState<Set<string>>(new Set())
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [published, setPublished] = useState(false)
@@ -888,16 +795,8 @@ function SchedulePreview({
   // until every one of them is ticked — the data is shown exactly as read.
   const [ackedWarnings, setAckedWarnings] = useState<Set<string>>(new Set())
 
-  const profilesQuery = useProfiles()
-
   const conflictKeys = new Set(conflicts.map((c) => identityKey(c)))
-  const nameSummary = summarizeNames(assignments, confirmedFuzzy)
-  const previewGrid = buildPreviewGrid(assignments, confirmedFuzzy, detectedWeekStart)
-  const nameCounts = new Map<string, number>()
-  for (const a of assignments) {
-    const key = normalizeForMatch(a.source_name ?? '')
-    if (key) nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1)
-  }
+  const previewGrid = buildPreviewGrid(assignments, new Set(), detectedWeekStart)
 
   function markDirty() {
     setIsDirty(true)
@@ -906,32 +805,6 @@ function SchedulePreview({
 
   function removeRow(index: number) {
     setAssignments((prev) => prev.filter((_, i) => i !== index))
-    markDirty()
-  }
-
-  // Ties an account to one assignment (or to every assignment carrying the same
-  // name). source_name is never rewritten: the name from the file stays.
-  function linkRows(index: number, userId: string, applyToSameName = false) {
-    const target = assignments[index]
-    if (!target) return
-    const sameName = normalizeForMatch(target.source_name ?? '')
-    setAssignments((prev) =>
-      prev.map((a, i) =>
-        i === index || (applyToSameName && sameName && normalizeForMatch(a.source_name ?? '') === sameName)
-          ? linkAssignmentToUser(a, userId)
-          : a,
-      ),
-    )
-    markDirty()
-  }
-
-  function confirmSuggestionAt(index: number) {
-    const row = assignments[index]
-    if (row) confirmFuzzyMatch(row)
-  }
-
-  function confirmFuzzyMatch(row: MatchedAssignment) {
-    setConfirmedFuzzy((prev) => new Set(prev).add(identityKey(row)))
     markDirty()
   }
 
@@ -982,7 +855,7 @@ function SchedulePreview({
     try {
       const diff = await callPublishScheduleImport({
         importId,
-        assignments: toPublishPayload(assignments, confirmedFuzzy),
+        assignments: toPublishPayload(assignments, new Set()),
         resolutions: buildResolutions(),
         confirmedDeleteIds: [],
         dryRun: true,
@@ -1029,7 +902,7 @@ function SchedulePreview({
     try {
       await callPublishScheduleImport({
         importId,
-        assignments: toPublishPayload(assignments, confirmedFuzzy),
+        assignments: toPublishPayload(assignments, new Set()),
         resolutions: buildResolutions(),
         confirmedDeleteIds: Array.from(confirmedDeleteIds),
         dryRun: false,
@@ -1066,14 +939,13 @@ function SchedulePreview({
           <p className="text-xs text-text-secondary">שבוע מזוהה: החל מ-{detectedWeekStart}</p>
         )}
 
-        {/* Four separate measures: what was read, and how many distinct names
-            have a linked account. A name with no account is still read and
-            shown; the missing link is optional information, not an error. */}
-        <section aria-label="סיכום הקובץ" className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <SummaryMetric value={nameSummary.assignments} text="שיבוצים נקראו" />
-          <SummaryMetric value={nameSummary.uniqueNames} text="שמות ייחודיים" />
-          <SummaryMetric value={nameSummary.linkedNames} text="מקושרים למשתמש" tone="good" />
-          <SummaryMetric value={nameSummary.unlinkedNames} text="לא מקושרים למשתמש" />
+        <section aria-label="סיכום הקובץ" className="card px-4 py-3 flex flex-wrap items-baseline gap-x-6 gap-y-1">
+          <p className="text-sm text-text-secondary">
+            שבוע: <bdi dir="ltr" className="font-bold text-text-primary">{detectedWeekStart ?? '—'}</bdi>
+          </p>
+          <p className="text-sm text-text-secondary">
+            <span className="font-bold text-text-primary tabular-nums">{assignments.length}</span> שיבוצים
+          </p>
         </section>
 
         <div className="flex gap-2 flex-wrap">
@@ -1109,13 +981,7 @@ function SchedulePreview({
           </div>
         )}
 
-        <WeeklyPreviewGrid
-          grid={previewGrid}
-          profiles={(profilesQuery.data ?? []).map((p) => ({ id: p.id, full_name: p.full_name }))}
-          nameCounts={nameCounts}
-          onLink={linkRows}
-          onConfirmSuggestion={confirmSuggestionAt}
-        />
+        <WeeklyPreviewGrid grid={previewGrid} />
 
         {coverage && <CoverageReport coverage={coverage} />}
 
@@ -1240,7 +1106,6 @@ function SchedulePreview({
                   <th className="px-3 py-2.5 font-bold text-right">עמדה</th>
                   <th className="px-3 py-2.5 font-bold text-right">שעות</th>
                   <th className="px-3 py-2.5 font-bold text-right">שם</th>
-                  <th className="px-3 py-2.5 font-bold text-right">התאמה</th>
                   <th className="px-3 py-2.5 font-bold text-right">עריכה ידנית</th>
                   <th className="px-3 py-2.5"></th>
                 </tr>
@@ -1267,15 +1132,7 @@ function SchedulePreview({
                           className="w-28 bg-white border border-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary transition"
                         />
                       </td>
-                      <td className="px-3 py-2">
-                        <MatchConfidenceCell
-                          assignment={a}
-                          profiles={profilesQuery.data ?? []}
-                          isConfirmed={confirmedFuzzy.has(key)}
-                          onAssignExisting={(userId) => linkRows(i, userId)}
-                          onConfirmFuzzy={() => confirmFuzzyMatch(a)}
-                        />
-                      </td>
+                      
                       <td className="px-3 py-2">
                         {isConflict && (
                           <label className="flex items-start gap-1.5 text-[11px] text-warning max-w-[160px]">
@@ -1314,7 +1171,7 @@ function SchedulePreview({
               {has('no_dry_run') && <p>יש להריץ בדיקה מחדש (dry run) לפני פרסום.</p>}
               {has('stale_preview') && <p>התצוגה השתנתה — יש להריץ בדיקה מחדש לפני פרסום.</p>}
               {has('unconfirmed_deletes') && <p>יש לאשר את כל המחיקות הצפויות לפני פרסום.</p>}
-              {has('double_booked') && <p>יש לפתור את השיבוצים הכפולים של אותו משתמש מקושר (המפורטים למעלה) לפני פרסום.</p>}
+              {has('double_booked') && <p>יש לפתור את השיבוצים הכפולים (המפורטים למעלה) לפני פרסום.</p>}
               {has('unresolved_position') && (
                 <p>קיימים שיבוצים שלא ממופים לעמדה קנונית — לא ניתן לפרסם עד שתוגדר ההחלטה (ראו האזהרות למעלה).</p>
               )}

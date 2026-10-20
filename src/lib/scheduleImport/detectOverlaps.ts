@@ -45,7 +45,7 @@ export function detectOverlaps(rows: PublishDiffRow[]): ValidationWarning[] {
         const nameOnly = identity.startsWith('name:')
         warnings.push({
           kind: nameOnly ? 'possible_double_booking' : 'double_booked',
-          message: `${nameOnly ? 'ייתכן שיבוץ כפול (השם לא מקושר למשתמש, אולי אדם אחר באותו שם)' : 'שיבוץ כפול'}: ${name} משובץ בו-זמנית ל-${a.position} (${a.work_date}) ול-${b.position} (${b.work_date}).`,
+          message: `${nameOnly ? 'ייתכן שיבוץ כפול (ייתכן שמדובר באנשים שונים עם אותו שם)' : 'שיבוץ כפול'}: ${name} משובץ בו-זמנית ל-${a.position} (${a.work_date}) ול-${b.position} (${b.work_date}).`,
           work_date: a.work_date,
           position: a.position,
         })
