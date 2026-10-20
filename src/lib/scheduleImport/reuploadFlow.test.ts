@@ -23,7 +23,7 @@ describe('re-upload composition', () => {
       rows: [
         [cell(''), cell('ראשון 06/09')],
         [cell('מאבטח')],
-        [cell('שער'), cell('08:00-14:00 בדיקה־א׳')],
+        [cell('AB'), cell('08:00-14:00 בדיקה־א׳')],
       ],
     }
     const first = runPipeline(grid)
@@ -37,16 +37,16 @@ describe('re-upload composition', () => {
       rows: [
         [cell(''), cell('ראשון 06/09')],
         [cell('מאבטח')],
-        [cell('שער'), cell('08:00-14:00 בדיקה־א׳')],
-        [cell('שער 2'), cell('08:00-14:00 בדיקה־א׳')],
+        [cell('AB'), cell('08:00-14:00 בדיקה־א׳')],
+        [cell('CD'), cell('08:00-14:00 בדיקה־א׳')],
       ],
     }
     const existing = [
-      { work_date: '2026-09-06', shift_category: 'morning', position: 'שער', slot_index: 0, is_manually_edited: true },
+      { work_date: '2026-09-06', shift_category: 'morning', position: 'AB', slot_index: 0, is_manually_edited: true },
     ]
     const result = runPipeline(grid, existing)
     expect(result.conflicts).toHaveLength(1)
-    expect(result.conflicts[0].position).toBe('שער')
-    expect(result.assignments).toHaveLength(2) // both rows still appear in the diff; only 'שער' is flagged
+    expect(result.conflicts[0].position).toBe('AB')
+    expect(result.assignments).toHaveLength(2) // both rows still appear in the diff; only 'AB' is flagged
   })
 })

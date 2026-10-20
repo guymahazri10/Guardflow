@@ -1,5 +1,6 @@
 import type { ShiftCategory } from './types'
 import { israelLocalToUtcIso } from '../israelTime'
+import { SHIFT_CATEGORIES } from '../../constants/shifts'
 
 // Deliberately NOT the same boundaries as src/constants/shifts.ts (07:00 /
 // 15:00 / 23:00). Those describe the *clock windows* the live page uses to
@@ -56,4 +57,68 @@ export function israelRangeToUtc(
   if (crossesMidnight) endDate.setUTCDate(endDate.getUTCDate() + 1)
 
   return { starts_at, ends_at: toIso(endDate, endHour, endMinute) }
+}
+
+const PERIOD_WORDS: Array<[string, ShiftCategory]> = [
+  ['בוקר', 'morning'],
+  ['צהריים', 'afternoon'],
+  ['לילה', 'night'],
+]
+
+/**
+ * The shift category a source row's own title names ("אחמ"ש צהריים14:30-23:10",
+ * "מאבטח רכוב בוקר", "לילה מאבטח"). The title, not the hours, defines the
+ * category: real shifts start early, end late, or run partially, and none of
+ * that moves a shift into another category. Null when the title names no
+ * period, or names more than one.
+ */
+export function categoryFromRowLabel(label: string): ShiftCategory | null {
+  const found = PERIOD_WORDS.filter(([word]) => label.includes(word))
+  return found.length === 1 ? found[0][1] : null
+}
+
+// A shift may start up to an hour before its category window opens (the real
+// handover buffer is 30 minutes) and end up to an hour after it closes.
+const ENVELOPE_TOLERANCE_MINUTES = 60
+// Longest plausible single shift: the longest observed is 8h40.
+export const MAX_PLAUSIBLE_SHIFT_MINUTES = 10 * 60
+
+/** Where an hour range sits against its category's window. Informational:
+ *  the caller keeps the original hours either way. */
+export function checkShiftEnvelope(
+  category: ShiftCategory,
+  startHour: number,
+  startMinute: number,
+  endHour: number,
+  endMinute: number,
+): { outsideWindow: boolean; durationMinutes: number } {
+  const window = SHIFT_CATEGORIES[category]
+  const windowStart = window.startHour * 60
+  const windowLength = (((window.endHour - window.startHour) % 24) + 24) % 24 * 60
+  const start = startHour * 60 + startMinute
+  const durationMinutes = (((endHour * 60 + endMinute) - start) % 1440 + 1440) % 1440
+  const offset = ((start - windowStart + 1440 + 720) % 1440) - 720
+  const outsideWindow =
+    offset < -ENVELOPE_TOLERANCE_MINUTES ||
+    offset >= windowLength ||
+    offset + durationMinutes > windowLength + ENVELOPE_TOLERANCE_MINUTES
+  return { outsideWindow, durationMinutes }
+}
+
+const ENGLISH_CATEGORIES: Record<string, ShiftCategory> = {
+  morning: 'morning',
+  afternoon: 'afternoon',
+  night: 'night',
+}
+
+/**
+ * Reads an explicit category out of free text extracted by the image / JSON
+ * path ("בוקר", "צהריים", "לילה", or "morning"/"afternoon"/"night"). Null when
+ * absent or ambiguous — the caller then falls back to hours and says so.
+ */
+export function parseExplicitCategory(raw: unknown): ShiftCategory | null {
+  if (typeof raw !== 'string' || raw.trim() === '') return null
+  const lower = raw.trim().toLowerCase()
+  if (ENGLISH_CATEGORIES[lower]) return ENGLISH_CATEGORIES[lower]
+  return categoryFromRowLabel(raw)
 }

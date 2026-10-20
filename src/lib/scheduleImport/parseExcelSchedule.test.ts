@@ -66,4 +66,26 @@ describe('parseExcelSchedule', () => {
     expect(grid.rows[0][0].text).toContain('ראשון')
     expect(grid.rows[0][1].text).toBe('')
   })
+
+  // Real export finding: a per-cell editable-widget <script> (e.g. a combo
+  // box init) landed inside a <td>, and textContent — which concatenates a
+  // script element's own text same as any other element — leaked its code
+  // ("holder_row[1]=\"ombo-1-1-1\";") into the cell's parsed text. DOMParser
+  // never executes script content regardless of this fix (it only parses
+  // markup); this test only proves the leaked TEXT is gone from entries.
+  it('strips <script>/<style> text from a cell without executing it', () => {
+    const html = `
+      <table>
+        <tr><td></td><td>ראשון 06/09</td></tr>
+        <tr><td>מאבטח</td></tr>
+        <tr><td>AB</td><td><script>holder_row[1]="ombo-1-1-1";</script><br>06:45-15:10<br>בדיקה־ז׳</td></tr>
+      </table>
+    `
+    const bytes = new TextEncoder().encode(html)
+    const grid = parseExcelSchedule(bytes, 'xls-html')
+    const cell = grid.rows[2][1]
+    expect(cell.text).not.toContain('holder_row')
+    expect(cell.text).not.toContain('ombo-1-1-1')
+    expect(cell.entries).toEqual(['06:45-15:10', 'בדיקה־ז׳'])
+  })
 })

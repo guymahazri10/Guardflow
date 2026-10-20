@@ -45,11 +45,23 @@ function parseHtmlTable(bytes: Uint8Array): RawGrid {
 
       const rawHtml = td.innerHTML.replace(/<br\s*\/?>/gi, '\n')
       const tempDoc = new DOMParser().parseFromString(`<div>${rawHtml}</div>`, 'text/html')
+      // DOMParser never executes <script> content — it only parses markup —
+      // but textContent still concatenates a <script>/<style> element's own
+      // text, which leaked real site combo-box init code (e.g.
+      // `holder_row[1]="ombo-1-1-1";`) into cell text on a real export where
+      // the editable-cell widget's script tag landed inside a <td>. Strip
+      // those elements before reading textContent so their text never
+      // reaches parsing, regardless of what they contain.
+      tempDoc.querySelectorAll('script, style').forEach((el) => el.remove())
       const text = (tempDoc.body.textContent ?? '').trim()
 
-      cells[colCursor] = { text, entries: splitEntries(text) }
-
       const colspan = Number(td.getAttribute('colspan') ?? '1')
+      cells[colCursor] = {
+        text,
+        entries: splitEntries(text),
+        ...(colspan > 1 ? { colspan } : {}),
+      }
+
       const rowspan = Number(td.getAttribute('rowspan') ?? '1')
       for (let r = 0; r < rowspan; r++) {
         occupied[rowIndex + r] = occupied[rowIndex + r] ?? []
