@@ -4,7 +4,7 @@ import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
 import type { ShiftAssignment } from '../lib/scheduleImports'
 import { addDaysIso, formatIsraelShortDateLabel } from '../lib/israelTime'
 import { weekStartIsoFor } from '../lib/scheduleImport/boardDatedSync'
-import { MAAVTACH_POSITION_ORDER } from '../lib/scheduleImport/liveBoardPositions'
+import { allKnownPositionsForCategory } from '../lib/scheduleImport/liveBoardPositions'
 import { SHIFT_CATEGORIES, type ShiftCategory } from '../constants/shifts'
 import { AlertIcon, ClipboardIcon } from '../components/ui/StateIcon'
 
@@ -27,9 +27,12 @@ function PageHeader({ light, bold }: { light: string; bold: string }) {
  * The table's row structure, in display order — mirrors the source table's
  * own layout (grouped by worker kind, then by shift period) rather than
  * CANONICAL_POSITIONS' flat union list, which has no per-period breakdown.
- * MAAVTACH_POSITION_ORDER (liveBoardPositions.ts) already carries exactly
- * this per-period breakdown, manager-confirmed — reused here instead of a
- * second hand-written list that could drift from it.
+ * allKnownPositionsForCategory (liveBoardPositions.ts) already carries
+ * exactly this per-period breakdown, manager-confirmed, plus every known
+ * variant-specific role label (e.g. the night solo-guard's "לילה מאבטח",
+ * which isn't a fixed post the two-guard board's לובי positions already
+ * cover) — reused here instead of a second hand-written list that could
+ * drift from it.
  */
 const CATEGORIES: ShiftCategory[] = ['morning', 'afternoon', 'night']
 
@@ -178,7 +181,7 @@ function WeekTable({
                     {SHIFT_CATEGORIES[category].label}
                   </td>
                 </tr>
-                {MAAVTACH_POSITION_ORDER[category].map((position) => {
+                {allKnownPositionsForCategory(category).map((position) => {
                   const row: Row = { shiftCategory: category, position }
                   return (
                     <tr key={position} className="border-b border-border last:border-0">

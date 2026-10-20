@@ -1,7 +1,7 @@
 import { SHIFT_CATEGORIES, type ShiftCategory } from '../../constants/shifts'
 import { toLocalDateIso, addDaysIso } from '../israelTime'
 import type { ShiftAssignment } from '../scheduleImports'
-import { getImportPositionForSlot } from './liveBoardPositions'
+import { getImportSlotTargets, guardCountFromCols, type ImportSlotTarget } from './liveBoardPositions'
 
 /**
  * The work date a given shift category's currently-relevant board maps to.
@@ -53,19 +53,39 @@ export function indexDatedBySlot(
   workDate: string,
 ): Map<string, ShiftAssignment> {
   const bySlot = new Map<string, ShiftAssignment>()
+  const guardCount = guardCountFromCols(cols)
   for (const role of cols) {
-    const position = getImportPositionForSlot(shiftType, role)
-    if (!position) continue
-    const match = assignments.find(
-      (a) =>
-        a.work_date === workDate &&
-        a.shift_category === shiftType &&
-        a.position === position &&
-        a.published,
+    const match = findDatedForSlot(
+      assignments,
+      getImportSlotTargets(shiftType, role, guardCount),
+      workDate,
+      shiftType,
     )
     if (match) bySlot.set(role, match)
   }
   return bySlot
+}
+
+/** First published assignment matching any of a slot's targets, in priority
+ *  order. Shared with the live screen so both resolve a slot identically. */
+export function findDatedForSlot(
+  assignments: ShiftAssignment[],
+  targets: ImportSlotTarget[],
+  workDate: string,
+  category: string,
+): ShiftAssignment | undefined {
+  for (const target of targets) {
+    const match = assignments.find(
+      (a) =>
+        a.work_date === workDate &&
+        a.shift_category === category &&
+        a.position === target.position &&
+        (target.slotIndex === undefined || a.slot_index === target.slotIndex) &&
+        a.published,
+    )
+    if (match) return match
+  }
+  return undefined
 }
 
 /** The name a dated assignment should display/seed with — a manual swap

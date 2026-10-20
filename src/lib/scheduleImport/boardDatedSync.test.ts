@@ -92,6 +92,24 @@ describe('indexDatedBySlot', () => {
     const bySlot = indexDatedBySlot(rows, [...cols, 'מאבטח 3'], 'night', '2026-09-02')
     expect(bySlot.has('מאבטח 3')).toBe(false)
   })
+
+  // The one-guard night variant — this is the exact lookup both Setup
+  // (ShiftSetupPage via this function) and Live (ShiftLivePage directly)
+  // perform, each from their own copy of the same board's cols; proving it
+  // here proves they can never disagree, since both call the same function
+  // with the same (cols, shiftType) derived from the same board.
+  it('keys the one-guard night board\'s sole slot to the night solo-guard assignment, with אחמ"ש kept separate', () => {
+    const soloNightCols = ['אחמ"ש', 'מאבטח 1']
+    const rows = [
+      assignment({ id: 'cmd', position: 'אחמ"ש', worker_kind: 'אחמ"ש', source_name: 'בדיקה־מפקד' }),
+      assignment({ id: 'guard', position: 'לילה מאבטח', source_name: 'בדיקה־שומר' }),
+    ]
+    const bySlot = indexDatedBySlot(rows, soloNightCols, 'night', '2026-09-02')
+
+    expect(bySlot.get('אחמ"ש')?.id).toBe('cmd')
+    expect(bySlot.get('מאבטח 1')?.id).toBe('guard')
+    expect(bySlot.size).toBe(2) // no duplication onto a second slot — there isn't one
+  })
 })
 
 describe('effective assignment identity', () => {
@@ -108,5 +126,34 @@ describe('effective assignment identity', () => {
     const a = assignment({ actual_name: 'מחליף', actual_user_id: 'p2', is_manually_edited: true })
     expect(effectiveAssignmentName(a)).toBe('מחליף')
     expect(effectiveAssignmentUserId(a)).toBe('p2')
+  })
+})
+
+describe('indexDatedBySlot — night guard role with one or two guards', () => {
+  const cols = ['אחמ"ש', 'מאבטח 1', 'מאבטח 2']
+  const role = (slot_index: number, name: string, id: string) =>
+    assignment({ id, position: 'לילה מאבטח', slot_index, source_name: name, work_date: '2026-10-18' })
+
+  it('seats both guards by slot_index', () => {
+    const map = indexDatedBySlot([role(0, 'ראשון', 'g0'), role(1, 'שני', 'g1')], cols, 'night', '2026-10-18')
+    expect(map.get('מאבטח 1')?.source_name).toBe('ראשון')
+    expect(map.get('מאבטח 2')?.source_name).toBe('שני')
+  })
+
+  it('leaves the second slot empty when only one guard is imported — no invented person, no duplicate', () => {
+    const map = indexDatedBySlot([role(0, 'יחיד', 'g0')], cols, 'night', '2026-10-18')
+    expect(map.get('מאבטח 1')?.source_name).toBe('יחיד')
+    expect(map.has('מאבטח 2')).toBe(false)
+  })
+
+  it('does not read slot_index 1 into the first slot', () => {
+    const map = indexDatedBySlot([role(1, 'שני בלבד', 'g1')], cols, 'night', '2026-10-18')
+    expect(map.has('מאבטח 1')).toBe(false)
+    expect(map.get('מאבטח 2')?.source_name).toBe('שני בלבד')
+  })
+
+  it('still shows existing לובי rows from earlier imports', () => {
+    const legacy = assignment({ id: 'l1', work_date: '2026-10-18', position: 'לובי עליון', source_name: 'ישן' })
+    expect(indexDatedBySlot([legacy], cols, 'night', '2026-10-18').get('מאבטח 1')?.source_name).toBe('ישן')
   })
 })

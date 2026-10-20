@@ -8,7 +8,7 @@ import { getShiftProgress } from '../lib/shiftProgress'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, type ShiftCategory } from '../constants/shifts'
 import { toLocalDateIso, formatIsraelDateLabel } from '../lib/israelTime'
-import { workDateForCategory, weekStartIsoFor } from '../lib/scheduleImport/boardDatedSync'
+import { workDateForCategory, weekStartIsoFor, findDatedForSlot } from '../lib/scheduleImport/boardDatedSync'
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
@@ -16,7 +16,7 @@ import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
 import { useAuth } from '../contexts/AuthContext'
 import { AssignmentSwapModal } from '../components/AssignmentSwapModal'
-import { getImportPositionForSlot } from '../lib/scheduleImport/liveBoardPositions'
+import { getImportSlotTargets, guardCountFromCols, type ImportSlotTarget } from '../lib/scheduleImport/liveBoardPositions'
 
 /** Shared "dated assignment vs legacy roster name" state, threaded from the
  *  page root down into NowTab/AllShiftTab so both tabs share one query. */
@@ -184,6 +184,8 @@ function NowTab({
     return <Placeholder icon={<ClockIcon />} text="אין בלוק זמן פעיל כרגע" />
   }
 
+  const guardCount = guardCountFromCols(cols)
+
   return (
     <div className="flex flex-col gap-3">
       {/* Shift-wide hours already shown in the clock hero above — this only
@@ -207,7 +209,7 @@ function NowTab({
               // position before matching; an unrecognized slot maps to
               // itself, which simply never matches anything (same as the
               // legacy fallback below when there's no dated row at all).
-              position: getImportPositionForSlot(board.shift_type, role) ?? role,
+              targets: getImportSlotTargets(board.shift_type, role, guardCount),
               ...datedCtx,
             })}
             task={currentBlock.cells?.[role]}
@@ -239,6 +241,8 @@ function AllShiftTab({
 
   if (!rows.length) return <Placeholder icon={<ClipboardIcon />} text="אין לוח זמנים לתצוגה" />
 
+  const guardCount = guardCountFromCols(cols)
+
   return (
     <div className="flex flex-col gap-5 pb-4">
       {rows.map((row, i) => {
@@ -266,7 +270,7 @@ function AllShiftTab({
                   role={role}
                   guardName={datedOrLegacyName({
                     legacyName: board.guard_names?.[role]?.name ?? null,
-                    position: getImportPositionForSlot(board.shift_type, role) ?? role,
+                    targets: getImportSlotTargets(board.shift_type, role, guardCount),
                     ...datedCtx,
                   })}
                   task={row.cells?.[role]}
@@ -291,7 +295,7 @@ function AllShiftTab({
  * identical to before this feature existed. */
 function datedOrLegacyName({
   legacyName,
-  position,
+  targets,
   scheduleImportEnabled,
   assignmentsQuery,
   lookupWorkDate,
@@ -300,7 +304,7 @@ function datedOrLegacyName({
   onSwapClick,
 }: {
   legacyName: string | null
-  position: string
+  targets: ImportSlotTarget[]
 } & DatedAssignmentContext): ReactNode {
   if (!scheduleImportEnabled) return legacyName
 
@@ -309,9 +313,7 @@ function datedOrLegacyName({
   // position can have a different assignment per category on the same date.
   // Omitting this let the wrong shift's assignment be shown (and the swap
   // modal act on the wrong assignment id).
-  const dated = assignmentsQuery.data?.find(
-    (a) => a.work_date === lookupWorkDate && a.position === position && a.shift_category === category && a.published,
-  )
+  const dated = findDatedForSlot(assignmentsQuery.data ?? [], targets, lookupWorkDate, category)
 
   if (!dated) return legacyName
 
