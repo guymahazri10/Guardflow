@@ -139,6 +139,29 @@ describe('normalizeSchedule — exclusion with counts and reasons', () => {
     expect(excludedSectionsSeen).toEqual(expect.arrayContaining(['בקרה', 'קורס']))
   })
 
+  it('excludes every absence row (חופש, מחלה, מילואים, קורס, לימודים, תגבור) with its own count, and control', () => {
+    const { assignments, summary } = normalizeSchedule(
+      grid(
+        section('אחמ"ש'),
+        [cell('אחמ"ש בוקר06:30-15:10'), cell('06:30-15:00\nגיא')],
+        section('בקרה'),
+        [cell('בוקר בקרה 2'), cell('06:45-15:10\nא')],
+        section('היעדרויות'),
+        [cell('חופש'), cell('00:00-00:00\nב')],
+        [cell('מחלה'), cell('08:00-18:00\nג')],
+        [cell('מילואים'), cell('08:00-18:00\nד')],
+        [cell('קורס'), cell('08:00-18:00\nה')],
+        [cell('לימודים'), cell('08:00-18:00\nו')],
+        [cell('תגבור'), cell('08:00-18:00\nז')],
+      ),
+      weekStart,
+    )
+    expect(assignments).toHaveLength(1)
+    expect(summary.excluded.map((g) => [g.section, g.count])).toEqual([
+      ['בקרה', 1], ['חופש', 1], ['מחלה', 1], ['מילואים', 1], ['קורס', 1], ['לימודים', 1], ['תגבור', 1],
+    ])
+  })
+
   it('counts empty cells instead of dropping them silently', () => {
     const { summary } = normalizeSchedule(
       grid(section('מאבטח'), [cell('בוקר מאבטח AB 06:45-15:10'), cell('')]),

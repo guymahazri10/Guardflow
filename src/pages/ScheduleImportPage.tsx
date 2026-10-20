@@ -30,6 +30,7 @@ import { useProfiles } from '../hooks/useProfiles'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import { useAuth } from '../contexts/AuthContext'
 import { utcIsoToIsraelHHMM } from '../lib/israelTime'
+import { SHIFT_CATEGORIES } from '../constants/shifts'
 import { AlertIcon, BracesIcon, CheckCircleIcon, ImageIcon, UploadIcon, XIcon } from '../components/ui/StateIcon'
 import type { ExtractedAssignment } from '../lib/scheduleImport/normalizeExtracted'
 import { looksLikeDayGroupedSchedule, adaptDayGroupedSchedule } from '../lib/scheduleImport/jsonScheduleAdapter'
@@ -1194,11 +1195,13 @@ function SchedulePreview({
                   return (
                     <tr key={i} className="border-b border-border last:border-0">
                       <td className="px-3 py-2 whitespace-nowrap">{a.work_date}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{a.shift_category}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{SHIFT_CATEGORIES[a.shift_category].label}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{a.worker_kind}</td>
                       <td className="px-3 py-2 whitespace-nowrap">{a.position}</td>
                       <td className="px-3 py-2 whitespace-nowrap tabular-nums">
-                        {utcIsoToIsraelHHMM(a.starts_at)}–{utcIsoToIsraelHHMM(a.ends_at)}
+                        <bdi dir="ltr">
+                          {utcIsoToIsraelHHMM(a.starts_at)}–{utcIsoToIsraelHHMM(a.ends_at)}
+                        </bdi>
                       </td>
                       <td className="px-3 py-2">
                         <input
