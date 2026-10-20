@@ -29,16 +29,35 @@ export type ShiftAssignment = {
   planned_user_id: string | null
   actual_user_id: string | null
   actual_name: string | null
-  source: 'excel' | 'pdf' | 'image' | 'manual'
+  source: 'excel' | 'pdf' | 'image' | 'json' | 'manual'
   import_id: string | null
   is_manually_edited: boolean
   published: boolean
 }
 
+/** One row as returned by publish_schedule_import's diff — same shape in
+ *  every category, whether or not a matching database row exists yet. */
+export type PublishDiffRow = {
+  id: string | null
+  work_date: string
+  shift_category: 'morning' | 'afternoon' | 'night'
+  worker_kind: 'אחמ"ש' | 'מאבטח'
+  position: string
+  slot_index: number
+  starts_at: string
+  ends_at: string
+  source_name: string | null
+  planned_user_id: string | null
+  actual_user_id: string | null
+  actual_name: string | null
+}
+
 export type PublishResult = {
-  to_insert: unknown[]
-  to_update: unknown[]
-  to_skip_manual: unknown[]
+  to_insert: PublishDiffRow[]
+  to_update: PublishDiffRow[]
+  unchanged: PublishDiffRow[]
+  to_keep_manual: PublishDiffRow[]
+  to_delete: PublishDiffRow[]
   conflicts: unknown[]
 }
 
@@ -143,20 +162,38 @@ export async function updateScheduleImportStoragePath(
   }
 }
 
+/** PostgREST reports an RPC called with parameters the database function
+ *  doesn't have (PGRST202, or "Could not find the function ... in the schema
+ *  cache") — i.e. this build is ahead of the applied migrations. */
+function isMissingRpcSignature(error: { code?: string; message?: string }): boolean {
+  return error.code === 'PGRST202' || /could not find the function/i.test(error.message ?? '')
+}
+
+export const SCHEMA_OUT_OF_DATE_MESSAGE =
+  'מסד הנתונים עדיין לא עודכן לגרסה הנדרשת לפרסום הסידור (חסרות המיגרציות phase20j ו-phase20k). לא בוצע שום שינוי. יש לפנות למנהל המערכת לפני ניסיון נוסף.'
+
 export async function callPublishScheduleImport(input: {
   importId: string
   assignments: MatchedAssignment[]
   resolutions: Record<string, 'revert_to_file'>
+  /** Ids from a prior dry-run's `to_delete` that the manager explicitly
+   *  confirmed in the UI. A real publish (dryRun: false) is rejected by the
+   *  RPC if it would delete a row not in this list — see phase20k. */
+  confirmedDeleteIds: string[]
   dryRun: boolean
 }): Promise<PublishResult> {
   const { data, error } = await supabase.rpc('publish_schedule_import', {
     p_import_id: input.importId,
     p_assignments: input.assignments,
     p_resolutions: input.resolutions,
+    p_confirmed_delete_ids: input.confirmedDeleteIds,
     p_dry_run: input.dryRun,
   })
 
   if (error) {
+    if (isMissingRpcSignature(error)) {
+      throw new Error(SCHEMA_OUT_OF_DATE_MESSAGE)
+    }
     throw new Error(getErrorMessage('Failed to publish schedule import', error))
   }
 

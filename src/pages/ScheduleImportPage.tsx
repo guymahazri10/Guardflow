@@ -9,10 +9,14 @@ import {
 } from '../lib/scheduleImport/normalizeExtracted'
 import { matchNames } from '../lib/scheduleImport/matchNames'
 import { validateSchedule, type ExistingAssignmentSummary } from '../lib/scheduleImport/validateSchedule'
-import type {
-  MatchedAssignment,
-  NormalizedAssignment,
-  ValidationWarning,
+import { detectOverlaps } from '../lib/scheduleImport/detectOverlaps'
+import { NIGHT_GUARD_ROLE } from '../lib/scheduleImport/positions'
+import {
+  ACK_REQUIRED_WARNING_KINDS,
+  type MatchedAssignment,
+  type NormalizedAssignment,
+  type NormalizeSummary,
+  type ValidationWarning,
 } from '../lib/scheduleImport/types'
 import {
   computeContentHash,
@@ -21,6 +25,7 @@ import {
   updateScheduleImportStoragePath,
   fetchShiftAssignmentsForWeek,
   callPublishScheduleImport,
+  type PublishResult,
 } from '../lib/scheduleImports'
 import { useProfiles } from '../hooks/useProfiles'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
@@ -30,7 +35,7 @@ import { AlertIcon, BracesIcon, CheckCircleIcon, ImageIcon, UploadIcon, XIcon } 
 import type { ExtractedAssignment } from '../lib/scheduleImport/normalizeExtracted'
 import { looksLikeDayGroupedSchedule, adaptDayGroupedSchedule } from '../lib/scheduleImport/jsonScheduleAdapter'
 
-type WizardStep = 'upload' | 'imagesSelected' | 'processing' | 'preview' | 'error'
+type WizardStep = 'selectWeek' | 'upload' | 'imagesSelected' | 'processing' | 'preview' | 'error'
 
 type OcrProgress = { imageIndex: number; totalImages: number; progress: number }
 
@@ -64,6 +69,22 @@ function getPreviousSunday(date: Date): Date {
   return result
 }
 
+function toIsoDate(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+/** Sunday check on the manager's own picked date string (YYYY-MM-DD), using
+ *  local-date parsing (not `new Date(iso)`, which reads it as UTC midnight
+ *  and can shift a day depending on the browser's timezone). */
+function isSundayIsoDate(iso: string): boolean {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return false
+  return new Date(y, m - 1, d).getDay() === 0
+}
+
 function PageShell({ children }: { children: React.ReactNode }) {
   return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-none">{children}</div>
 }
@@ -95,17 +116,33 @@ export function ScheduleImportPage() {
   const flag = useFeatureFlag('weekly_schedule_import')
   const { user } = useAuth()
 
-  const [step, setStep] = useState<WizardStep>('upload')
+  const [step, setStep] = useState<WizardStep>('selectWeek')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [importId, setImportId] = useState<string | null>(null)
   const [assignments, setAssignments] = useState<MatchedAssignment[]>([])
   const [warnings, setWarnings] = useState<ValidationWarning[]>([])
   const [conflicts, setConflicts] = useState<MatchedAssignment[]>([])
   const [detectedWeekStart, setDetectedWeekStart] = useState<string | null>(null)
-  const [stats, setStats] = useState({ imported: 0, skipped: 0, unmatched_names: 0 })
+  // parseRejected counts rows dropped during parsing/field-validation itself
+  // (bad hours, unknown position, etc. — one warning per row, see
+  // validateShiftFields.ts) — distinct from what the dry-run diff separately
+  // reports (inserted/updated/unchanged/kept-manual/to-delete).
+  const [stats, setStats] = useState({ parseRejected: 0, unmatched_names: 0 })
   const [pendingImages, setPendingImages] = useState<File[]>([])
   const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null)
   const [coverage, setCoverage] = useState<NormalizeExtractedResult['coverage'] | null>(null)
+  const [dryRunResult, setDryRunResult] = useState<PublishResult | null>(null)
+  // What the Excel importer included / left out, and why. Null for the image
+  // and JSON paths, which have no excluded groups.
+  const [summary, setSummary] = useState<NormalizeSummary | null>(null)
+
+  // The manager's chosen week. Selected on its own step, before any upload
+  // input is shown, and never editable again once a schedule_imports row has
+  // been created for this import session (importId !== null) — see the plan's
+  // "week lock" section. A mismatch between this and the week actually found
+  // in an uploaded file restarts the whole flow from this step, rather than
+  // silently switching to the detected week or the other way around.
+  const [selectedWeekStart, setSelectedWeekStart] = useState<string>(() => toIsoDate(getPreviousSunday(new Date())))
 
   const profilesQuery = useProfiles()
 
@@ -128,15 +165,14 @@ export function ScheduleImportPage() {
     return null
   }
 
-  // Shared by both the Excel and image paths once each has produced
-  // normalized assignments: match -> validate -> create the schedule_imports
-  // row -> upload the source file(s) -> move to preview. The two paths reach
-  // this point differently on purpose — Excel really is a grid, so it goes
-  // through normalizeSchedule, while the image path gets structured records
-  // straight from the model and skips grid re-parsing entirely (see
-  // normalizeExtracted.ts). `parseWarnings` (unreadable rows, unknown
-  // positions, a cropped screenshot) are merged into validateSchedule's own
-  // warnings — never dropped.
+  // Shared by all three input paths once each has produced normalized
+  // assignments: match -> check the file's week against the manager's chosen
+  // week -> validate -> create the schedule_imports row (only once the week
+  // matches — see the plan's week-lock section) -> upload the source file(s)
+  // -> run a real dry-run publish so the preview is backed by the same RPC
+  // that will actually write -> move to preview. `parseWarnings` (unreadable
+  // rows, unknown positions, a cropped screenshot) are merged into
+  // validateSchedule's own warnings — never dropped.
   async function finishImport(
     normalized: NormalizedAssignment[],
     sourceKind: 'excel' | 'image' | 'json',
@@ -145,17 +181,38 @@ export function ScheduleImportPage() {
     parseWarnings: ValidationWarning[],
     currentUserId: string,
     coverageInfo: NormalizeExtractedResult['coverage'] | null,
+    importSummary: NormalizeSummary | null = null,
   ) {
-    const weekStart = getPreviousSunday(new Date())
+    // An empty parse result must never reach the RPC at all — publishing it
+    // would (per the RPC's own guard) be rejected, but failing fast here
+    // with a specific message is clearer than surfacing a generic RPC error.
+    if (normalized.length === 0) {
+      setErrorMessage('הקובץ לא הכיל אף שיבוץ תקין לאחר הסינון. לא ניתן להמשיך עם רשימה ריקה.')
+      setStep('error')
+      return
+    }
+
+    const detectedWeekIso = normalized.reduce(
+      (min, a) => (a.work_date < min ? a.work_date : min),
+      normalized[0].work_date,
+    )
+
+    // The week is locked once chosen (see the selectWeek step) — a file
+    // whose own dates land in a different week is never silently accepted
+    // under the selected week, nor does the selected week silently change to
+    // match the file. The whole flow restarts from week selection instead.
+    if (detectedWeekIso !== selectedWeekStart) {
+      setErrorMessage(
+        `השבוע שנבחר (${selectedWeekStart}) אינו תואם לשבוע שזוהה בקובץ (${detectedWeekIso}). יש לבחור מחדש את השבוע ולהעלות את הקובץ שוב.`,
+      )
+      setStep('selectWeek')
+      return
+    }
 
     const profiles = (profilesQuery.data ?? []).map((p) => ({ id: p.id, full_name: p.full_name }))
     const matched = matchNames(normalized, profiles)
 
-    const weekStartIso =
-      normalized.length > 0
-        ? normalized.reduce((min, a) => (a.work_date < min ? a.work_date : min), normalized[0].work_date)
-        : weekStart.toISOString().slice(0, 10)
-    const existingAssignments = await fetchShiftAssignmentsForWeek(weekStartIso)
+    const existingAssignments = await fetchShiftAssignmentsForWeek(selectedWeekStart)
     const existingSummaries: ExistingAssignmentSummary[] = existingAssignments.map((a) => ({
       work_date: a.work_date,
       shift_category: a.shift_category,
@@ -169,7 +226,7 @@ export function ScheduleImportPage() {
 
     const contentHash = await computeContentHash(contentHashBytes)
     const scheduleImport = await createScheduleImport({
-      week_start: weekStartIso,
+      week_start: selectedWeekStart,
       source_kind: sourceKind,
       storage_path: '', // placeholder until the upload below completes and this row is updated
       original_filename: files.length === 1 ? files[0].name : `${files.length} תמונות`,
@@ -183,20 +240,35 @@ export function ScheduleImportPage() {
     // ever needed, just without a dedicated multi-path audit column.
     let firstStoragePath: string | null = null
     for (const file of files) {
-      const { storagePath } = await uploadScheduleFile(file, weekStartIso, scheduleImport.id)
+      const { storagePath } = await uploadScheduleFile(file, selectedWeekStart, scheduleImport.id)
       if (firstStoragePath === null) firstStoragePath = storagePath
     }
     if (firstStoragePath) {
       await updateScheduleImportStoragePath(scheduleImport.id, firstStoragePath)
     }
 
+    // Real dry-run against the same RPC that will publish — the preview is
+    // now backed by what the write path actually does, not only by the
+    // client-side validateSchedule heuristics above.
+    const diff = await callPublishScheduleImport({
+      importId: scheduleImport.id,
+      assignments: validated.assignments,
+      resolutions: {},
+      confirmedDeleteIds: [],
+      dryRun: true,
+    })
+
     setImportId(scheduleImport.id)
     setAssignments(validated.assignments)
     setWarnings(combinedWarnings)
     setConflicts(validated.conflicts)
-    setDetectedWeekStart(weekStartIso)
-    setStats(validated.stats)
+    setDetectedWeekStart(selectedWeekStart)
+    // Only warnings for rows that were actually dropped count as "skipped";
+    // review warnings (unusual hours, guessed category) keep their row.
+    setStats({ parseRejected: parseWarnings.filter((w) => w.kind === 'low_confidence_ocr' || w.kind === 'duplicate_slot').length, unmatched_names: validated.stats.unmatched_names })
     setCoverage(coverageInfo)
+    setSummary(importSummary)
+    setDryRunResult(diff)
     setStep('preview')
   }
 
@@ -223,8 +295,15 @@ export function ScheduleImportPage() {
       }
 
       const grid = parseExcelSchedule(bytes, kind)
-      const { assignments: normalized } = normalizeSchedule(grid, getPreviousSunday(new Date()))
-      await finishImport(normalized, 'excel', [file], bytes, [], user!.id, null)
+      // Anchor day-letter headers to the week the manager picked, as a UTC
+      // date (normalizeSchedule reads UTC fields). The file's own numeric
+      // dates stay authoritative; this only resolves a header that has none.
+      const {
+        assignments: normalized,
+        warnings: parseWarnings,
+        summary: importSummary,
+      } = normalizeSchedule(grid, new Date(`${selectedWeekStart}T00:00:00Z`))
+      await finishImport(normalized, 'excel', [file], bytes, parseWarnings, user!.id, null, importSummary)
     } catch (error) {
       setErrorMessage(getReadableError(error))
       setStep('error')
@@ -277,6 +356,7 @@ export function ScheduleImportPage() {
         [...result.warnings, ...normalized.warnings],
         user!.id,
         normalized.coverage,
+        normalized.summary,
       )
       setPendingImages([])
     } catch (error) {
@@ -361,11 +441,52 @@ export function ScheduleImportPage() {
         ],
         user!.id,
         normalized.coverage,
+        normalized.summary,
       )
     } catch (error) {
       setErrorMessage(getReadableError(error))
       setStep('error')
     }
+  }
+
+  if (step === 'selectWeek') {
+    const isValidSunday = isSundayIsoDate(selectedWeekStart)
+    return (
+      <PageShell>
+        <PageHeader light="ייבוא" bold="סידור שבועי" />
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-6">
+          {errorMessage && <ErrorBanner message={errorMessage} />}
+          <div className="card p-4 flex flex-col gap-3">
+            <div>
+              <p className="font-bold text-text-primary text-sm">לאיזה שבוע מיועד הקובץ?</p>
+              <p className="text-xs text-text-muted mt-0.5">
+                יש לבחור את יום ראשון שבתחילת השבוע. לא ניתן לשנות את השבוע לאחר תחילת ההעלאה.
+              </p>
+            </div>
+            <input
+              type="date"
+              value={selectedWeekStart}
+              onChange={(e) => setSelectedWeekStart(e.target.value)}
+              className="bg-white border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary transition"
+            />
+            {!isValidSunday && (
+              <p className="text-xs text-danger">התאריך שנבחר אינו יום ראשון — יש לבחור את תחילת השבוע.</p>
+            )}
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!isValidSunday}
+              onClick={() => {
+                setErrorMessage(null)
+                setStep('upload')
+              }}
+            >
+              המשך להעלאת קובץ
+            </button>
+          </div>
+        </div>
+      </PageShell>
+    )
   }
 
   if (step === 'upload' || step === 'error') {
@@ -374,6 +495,12 @@ export function ScheduleImportPage() {
         <PageHeader light="ייבוא" bold="סידור שבועי" />
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-6">
           {errorMessage && <ErrorBanner message={errorMessage} />}
+          <p className="text-xs text-text-secondary">
+            שבוע נבחר: החל מ-{selectedWeekStart} ·{' '}
+            <button type="button" className="underline" onClick={() => setStep('selectWeek')}>
+              שינוי שבוע
+            </button>
+          </p>
 
           <label
             className={`card border-2 border-dashed border-border-strong p-6 flex flex-col items-center text-center gap-2 transition-colors ${
@@ -533,7 +660,18 @@ export function ScheduleImportPage() {
       detectedWeekStart={detectedWeekStart}
       stats={stats}
       coverage={coverage}
-      onCancel={() => setStep('upload')}
+      summary={summary}
+      initialDryRunResult={dryRunResult}
+      onCancel={() => {
+        // A cancelled import is a full restart, including week selection —
+        // nothing about this attempt (the row already created, the dry-run
+        // result) should leak into a fresh one. Only importId/dryRunResult
+        // need clearing here for correctness; the rest is overwritten by
+        // finishImport before the preview is ever shown again.
+        setImportId(null)
+        setDryRunResult(null)
+        setStep('selectWeek')
+      }}
     />
   )
 }
@@ -595,6 +733,10 @@ function StatChip({ label, value, tone }: { label: string; value: number; tone: 
       <p className="text-[11px] font-semibold mt-1">{label}</p>
     </div>
   )
+}
+
+function warningKey(w: ValidationWarning): string {
+  return [w.kind, w.work_date, w.shift_category, w.position, w.slot_index, w.original_hours].join('|')
 }
 
 function identityKey(a: { work_date: string; shift_category: string; position: string; slot_index: number }): string {
@@ -684,6 +826,8 @@ function SchedulePreview({
   detectedWeekStart,
   stats,
   coverage,
+  summary,
+  initialDryRunResult,
   onCancel,
 }: {
   importId: string
@@ -691,8 +835,10 @@ function SchedulePreview({
   warnings: ValidationWarning[]
   conflicts: MatchedAssignment[]
   detectedWeekStart: string | null
-  stats: { imported: number; skipped: number; unmatched_names: number }
+  stats: { parseRejected: number; unmatched_names: number }
   coverage: NormalizeExtractedResult['coverage'] | null
+  summary: NormalizeSummary | null
+  initialDryRunResult: PublishResult | null
   onCancel: () => void
 }) {
   const [assignments, setAssignments] = useState(initialAssignments)
@@ -708,12 +854,38 @@ function SchedulePreview({
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
   const [published, setPublished] = useState(false)
+
+  // The dry-run diff currently backing the preview. Any edit to the table
+  // below (name, removed row, manual-conflict resolution) marks this stale
+  // via isDirty — a fresh publish is blocked until a new dry-run runs, so the
+  // manager can never publish against a diff that no longer matches what's
+  // on screen.
+  const [dryRunResult, setDryRunResult] = useState(initialDryRunResult)
+  const [isDirty, setIsDirty] = useState(false)
+  const [dryRunRunning, setDryRunRunning] = useState(false)
+  const [dryRunError, setDryRunError] = useState<string | null>(null)
+  // Ids (from the last dry-run's to_delete) the manager has explicitly
+  // checked off as approved for deletion. Publish sends exactly this set as
+  // p_confirmed_delete_ids — the RPC rejects the publish if it would delete
+  // anything outside it (see phase20k).
+  const [confirmedDeleteIds, setConfirmedDeleteIds] = useState<Set<string>>(new Set())
+  // Warnings the manager has explicitly acknowledged (unusual hours/duration,
+  // an unrecognized group, a category guessed from hours). Publish is blocked
+  // until every one of them is ticked — the data is shown exactly as read.
+  const [ackedWarnings, setAckedWarnings] = useState<Set<string>>(new Set())
+
   const profilesQuery = useProfiles()
 
   const conflictKeys = new Set(conflicts.map((c) => identityKey(c)))
 
+  function markDirty() {
+    setIsDirty(true)
+    setDryRunError(null)
+  }
+
   function removeRow(index: number) {
     setAssignments((prev) => prev.filter((_, i) => i !== index))
+    markDirty()
   }
 
   function assignExistingProfile(index: number, userId: string, name: string) {
@@ -726,10 +898,12 @@ function SchedulePreview({
         i === index ? { ...a, planned_user_id: userId, source_name: name, match_confidence: 'exact' as const } : a,
       )
     })
+    markDirty()
   }
 
   function confirmFuzzyMatch(row: MatchedAssignment) {
     setConfirmedFuzzy((prev) => new Set(prev).add(identityKey(row)))
+    markDirty()
   }
 
   function toggleOverride(row: MatchedAssignment) {
@@ -740,33 +914,116 @@ function SchedulePreview({
       else next.add(key)
       return next
     })
+    markDirty()
   }
 
   function editName(index: number, name: string) {
     setAssignments((prev) => prev.map((a, i) => (i === index ? { ...a, source_name: name } : a)))
+    markDirty()
   }
+
+  function toggleAckedWarning(w: ValidationWarning) {
+    const key = warningKey(w)
+    setAckedWarnings((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function toggleConfirmedDelete(id: string) {
+    setConfirmedDeleteIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function buildResolutions(): Record<string, 'revert_to_file'> {
+    const resolutions: Record<string, 'revert_to_file'> = {}
+    for (const key of overrides) resolutions[key] = 'revert_to_file'
+    return resolutions
+  }
+
+  async function runDryRun() {
+    setDryRunRunning(true)
+    setDryRunError(null)
+    try {
+      const diff = await callPublishScheduleImport({
+        importId,
+        assignments,
+        resolutions: buildResolutions(),
+        confirmedDeleteIds: [],
+        dryRun: true,
+      })
+      setDryRunResult(diff)
+      // A fresh diff means the previous deletion approvals no longer apply —
+      // the manager must re-approve against the new list, even if it happens
+      // to be identical, rather than carrying stale approvals forward.
+      setConfirmedDeleteIds(new Set())
+      setIsDirty(false)
+    } catch (error) {
+      setDryRunError(getReadableError(error))
+    } finally {
+      setDryRunRunning(false)
+    }
+  }
+
+  const overlapWarnings =
+    !isDirty && dryRunResult
+      ? detectOverlaps([...dryRunResult.to_insert, ...dryRunResult.to_update, ...dryRunResult.unchanged, ...dryRunResult.to_keep_manual])
+      : []
+
+  const pendingDeletes = !isDirty && dryRunResult ? dryRunResult.to_delete : []
+  const allDeletesConfirmed = pendingDeletes.every((row) => row.id && confirmedDeleteIds.has(row.id))
 
   const hasUnresolvedFuzzy = assignments.some((a) => a.match_confidence === 'fuzzy' && !confirmedFuzzy.has(identityKey(a)))
   const hasUnresolvedNone = assignments.some((a) => a.match_confidence === 'none')
-  const publishBlocked = hasUnresolvedFuzzy || hasUnresolvedNone
+  const hasUnconfirmedDeletes = pendingDeletes.length > 0 && !allDeletesConfirmed
+  const hasOverlaps = overlapWarnings.length > 0
+  // A מאבטח row that named a shift period but resolved to no canonical
+  // position token at all, and isn't the one supported role label either
+  // (normalizeSchedule.ts) — extracted so the manager can see it here, but
+  // never publishable until a human decides the real position mapping.
+  const hasUnresolvedPositionMapping = warnings.some((w) => w.kind === 'unresolved_position_mapping')
+  // The one supported role label (the night solo-guard, "לילה מאבטח")
+  // received more names on one date than its known capacity — a real
+  // crew-size mismatch, never silently dropped to fit.
+  const hasPositionCapacityMismatch = warnings.some((w) => w.kind === 'position_capacity_mismatch')
+  const ackWarnings = warnings.filter((w) => ACK_REQUIRED_WARNING_KINDS.includes(w.kind))
+  const hasUnackedWarnings = ackWarnings.some((w) => !ackedWarnings.has(warningKey(w)))
+  const publishBlocked =
+    hasUnresolvedFuzzy ||
+    hasUnresolvedNone ||
+    isDirty ||
+    !dryRunResult ||
+    hasUnconfirmedDeletes ||
+    hasOverlaps ||
+    hasUnresolvedPositionMapping ||
+    hasPositionCapacityMismatch ||
+    hasUnackedWarnings
 
   async function handlePublish() {
     if (publishBlocked) return
     setPublishing(true)
     setPublishError(null)
     try {
-      const resolutions: Record<string, 'revert_to_file'> = {}
-      for (const key of overrides) resolutions[key] = 'revert_to_file'
-
       await callPublishScheduleImport({
         importId,
         assignments,
-        resolutions,
+        resolutions: buildResolutions(),
+        confirmedDeleteIds: Array.from(confirmedDeleteIds),
         dryRun: false,
       })
       setPublished(true)
     } catch (error) {
+      // A race (someone else's edit surfaced a new deletion since our last
+      // dry-run) comes back from the RPC as a plain exception — treat it the
+      // same as any other staleness: require a fresh dry-run before retrying.
       setPublishError(getReadableError(error))
+      setIsDirty(true)
     } finally {
       setPublishing(false)
     }
@@ -792,21 +1049,130 @@ function SchedulePreview({
           <p className="text-xs text-text-secondary">שבוע מזוהה: החל מ-{detectedWeekStart}</p>
         )}
 
-        <div className="flex gap-2">
-          <StatChip label="ייקלטו" value={stats.imported} tone="good" />
-          <StatChip label="דולגו" value={stats.skipped} tone="neutral" />
+        <div className="flex gap-2 flex-wrap">
+          <StatChip label="דולגו בפענוח" value={stats.parseRejected} tone="neutral" />
           <StatChip label="שמות שלא זוהו" value={stats.unmatched_names} tone="warning" />
+          {!isDirty && dryRunResult && (
+            <>
+              <StatChip label="חדשים" value={dryRunResult.to_insert.length} tone="good" />
+              <StatChip label="מעודכנים" value={dryRunResult.to_update.length} tone="neutral" />
+              <StatChip label="ללא שינוי" value={dryRunResult.unchanged.length} tone="neutral" />
+              <StatChip label="שמורים ידנית" value={dryRunResult.to_keep_manual.length} tone="neutral" />
+              <StatChip label="ימחקו" value={dryRunResult.to_delete.length} tone={dryRunResult.to_delete.length > 0 ? 'warning' : 'neutral'} />
+            </>
+          )}
         </div>
 
+        {summary && (
+          <div className="card p-4 flex flex-col gap-2">
+            <p className="text-sm font-bold text-text-primary">
+              נכללו {summary.included} שיבוצים · הוחרגו {summary.excluded.reduce((n, g) => n + g.count, 0)}
+            </p>
+            {summary.excluded.length > 0 && (
+              <ul className="flex flex-col gap-0.5 text-xs text-text-secondary">
+                {summary.excluded.map((g) => (
+                  <li key={`${g.section}|${g.reason}`}>
+                    {g.count} · {g.reason}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {summary.emptyCells > 0 && (
+              <p className="text-xs text-text-muted">{summary.emptyCells} תאים ריקים (ללא עובד) דולגו.</p>
+            )}
+          </div>
+        )}
+
         {coverage && <CoverageReport coverage={coverage} />}
+
+        {(isDirty || dryRunRunning) && (
+          <div role="alert" className="card p-4 bg-warning-light border-warning/20 flex items-center justify-between gap-2.5">
+            <div className="flex gap-2.5">
+              <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-warning" />
+              <p className="text-xs text-warning">
+                {dryRunRunning ? 'בודק את הסידור מול השרת…' : 'התצוגה השתנתה — יש להריץ בדיקה מחדש לפני פרסום.'}
+              </p>
+            </div>
+            {!dryRunRunning && (
+              <button type="button" className="btn-primary shrink-0 text-xs px-3 py-1.5" onClick={() => void runDryRun()}>
+                בדיקה מחדש
+              </button>
+            )}
+          </div>
+        )}
+
+        {dryRunError && <ErrorBanner message={dryRunError} />}
+
+        {!isDirty && hasOverlaps && (
+          <div role="alert" className="card p-4 bg-danger-light border-danger/20 flex gap-2.5">
+            <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-danger" />
+            <ul className="flex flex-col gap-1 text-xs text-danger">
+              {overlapWarnings.map((w, i) => (
+                <li key={i}>{w.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {!isDirty && pendingDeletes.length > 0 && (
+          <div className="card p-4 bg-danger-light border-danger/20 flex flex-col gap-2">
+            <div className="flex gap-2.5">
+              <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-danger" />
+              <p className="text-xs font-bold text-danger">
+                השורות הבאות יימחקו לצמיתות בפרסום — יש לאשר כל אחת מהן במפורש:
+              </p>
+            </div>
+            <ul className="flex flex-col gap-1.5">
+              {pendingDeletes.map((row) => (
+                <li key={row.id} className="text-xs text-danger flex items-start gap-1.5">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-danger"
+                    checked={!!row.id && confirmedDeleteIds.has(row.id)}
+                    onChange={() => row.id && toggleConfirmedDelete(row.id)}
+                  />
+                  <span>
+                    {row.work_date} · {row.position} · {row.source_name ?? '(ריק)'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {warnings.length > 0 && (
           <div className="card p-4 bg-warning-light border-warning/20 flex gap-2.5">
             <AlertIcon className="shrink-0 w-4 h-4 mt-0.5 text-warning" />
             <ul className="flex flex-col gap-1 text-xs text-warning">
-              {warnings.map((w, i) => (
-                <li key={i}>{w.message}</li>
-              ))}
+              {ackWarnings.length > 1 && (
+                <li>
+                  <button
+                    type="button"
+                    className="underline font-bold"
+                    onClick={() => setAckedWarnings(new Set(ackWarnings.map(warningKey)))}
+                  >
+                    אישור כל {ackWarnings.length} החריגות לאחר עיון בהן
+                  </button>
+                </li>
+              )}
+              {warnings.map((w, i) =>
+                ACK_REQUIRED_WARNING_KINDS.includes(w.kind) ? (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 accent-warning"
+                      checked={ackedWarnings.has(warningKey(w))}
+                      onChange={() => toggleAckedWarning(w)}
+                    />
+                    <span>
+                      {w.message}
+                      {w.original_hours && <bdi dir="ltr"> [{w.original_hours}]</bdi>}
+                    </span>
+                  </li>
+                ) : (
+                  <li key={i}>{w.message}</li>
+                ),
+              )}
             </ul>
           </div>
         )}
@@ -893,6 +1259,16 @@ function SchedulePreview({
             <div className="text-xs text-warning flex flex-col gap-0.5">
               {hasUnresolvedFuzzy && <p>יש לאשר את כל ההתאמות המשוערות (התאמה לא ודאית) לפני פרסום.</p>}
               {hasUnresolvedNone && <p>יש לבחור עובד קיים או להסיר כל שורה עם שם שלא זוהה לפני פרסום.</p>}
+              {(isDirty || !dryRunResult) && <p>יש להריץ בדיקה מחדש (dry run) לפני פרסום.</p>}
+              {!isDirty && hasUnconfirmedDeletes && <p>יש לאשר את כל המחיקות הצפויות לפני פרסום.</p>}
+              {!isDirty && hasOverlaps && <p>יש לפתור את השיבוצים הכפולים המפורטים למעלה לפני פרסום.</p>}
+              {hasUnresolvedPositionMapping && (
+                <p>קיימים שיבוצים שלא ממופים לעמדה קנונית — לא ניתן לפרסם עד שתוגדר ההחלטה (ראו האזהרות למעלה).</p>
+              )}
+              {hasUnackedWarnings && <p>יש לאשר במפורש את כל החריגות המסומנות (שעות חריגות, קבוצה לא מוכרת) לפני פרסום.</p>}
+              {hasPositionCapacityMismatch && (
+                <p>התקבלו יותר מאבטחי-לילה ממספר המקומות המרבי ({NIGHT_GUARD_ROLE.maxCapacity}) — לא ניתן לפרסם עד שהפער יבדק (ראו האזהרות למעלה).</p>
+              )}
             </div>
           </div>
         )}
