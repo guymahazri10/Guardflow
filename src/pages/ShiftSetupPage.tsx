@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
@@ -29,6 +29,7 @@ import {
   workDateForCategory,
   weekStartIsoFor,
   indexDatedBySlot,
+  lockedSlotsForSetup,
   effectiveAssignmentName,
   effectiveAssignmentUserId,
 } from '../lib/scheduleImport/boardDatedSync'
@@ -109,6 +110,14 @@ export function ShiftSetupPage() {
         ? indexDatedBySlot(assignmentsQuery.data ?? [], board.cols ?? [], board.shift_type, workDate)
         : new Map<string, ShiftAssignment>(),
     [board, assignmentsQuery.data, scheduleImportFlag.enabled, workDate],
+  )
+
+  // An אחמ"ש cannot change imported assignments from here (only a מנהל can);
+  // those slots are shown read-only with a pointer to the live screen, instead
+  // of accepting an edit that "saves" but changes nothing that is displayed.
+  const lockedSlots = useMemo(
+    () => lockedSlotsForSetup({ isAdmin, isCommander, importEnabled: scheduleImportFlag.enabled, datedBySlot }),
+    [isAdmin, isCommander, scheduleImportFlag.enabled, datedBySlot],
   )
 
   // ── Pull-to-refresh ──
@@ -370,6 +379,14 @@ export function ShiftSetupPage() {
         ) : (
           <div className="flex flex-col gap-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:content-start">
             <p className="text-xs font-medium text-text-muted lg:col-span-2">שמות מאבטחים</p>
+            {lockedSlots.size > 0 && (
+              <div className="card p-3 text-xs text-text-secondary leading-relaxed lg:col-span-2" role="note">
+                השיבוץ של המשמרת נטען מהסידור השבועי ולכן אי אפשר לשנות אותו מכאן.{' '}
+                <Link to="/shift-live" className="font-bold text-primary underline">
+                  להחלפת מאבטח במשמרת הפעילה — למסך שידור חי
+                </Link>
+              </div>
+            )}
             {cols.map((role) => (
               <GuardNameRow
                 key={role}
@@ -377,7 +394,8 @@ export function ShiftSetupPage() {
                 value={guardNames[role] ?? { name: '', user_id: null }}
                 onChange={(assignment) => handleAssignmentChange(role, assignment)}
                 profiles={profiles}
-                readOnly={!canEdit}
+                readOnly={!canEdit || lockedSlots.has(role)}
+                locked={lockedSlots.has(role)}
               />
             ))}
           </div>
@@ -417,12 +435,14 @@ function GuardNameRow({
   onChange,
   profiles,
   readOnly,
+  locked,
 }: {
   role: string
   value: GuardAssignment
   onChange: (value: GuardAssignment) => void
   profiles: ProfileListItem[]
   readOnly: boolean
+  locked: boolean
 }) {
   return (
     <div className="bg-white rounded-xl border border-border flex items-center h-[52px] focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-shadow">
@@ -434,6 +454,11 @@ function GuardNameRow({
       </div>
 
       <GuardNameInput value={value} profiles={profiles} onChange={onChange} readOnly={readOnly} />
+      {locked && (
+        <span className="px-3 text-[11px] text-text-muted shrink-0" title="שיבוץ מהסידור השבועי — להחלפה במסך שידור חי">
+          מהסידור
+        </span>
+      )}
     </div>
   )
 }

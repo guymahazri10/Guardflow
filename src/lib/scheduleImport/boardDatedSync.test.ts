@@ -3,6 +3,7 @@ import {
   workDateForCategory,
   weekStartIsoFor,
   indexDatedBySlot,
+  lockedSlotsForSetup,
   effectiveAssignmentName,
   effectiveAssignmentUserId,
 } from './boardDatedSync'
@@ -155,5 +156,20 @@ describe('indexDatedBySlot — night guard role with one or two guards', () => {
   it('still shows existing לובי rows from earlier imports', () => {
     const legacy = assignment({ id: 'l1', work_date: '2026-10-18', position: 'לובי עליון', source_name: 'ישן' })
     expect(indexDatedBySlot([legacy], cols, 'night', '2026-10-18').get('מאבטח 1')?.source_name).toBe('ישן')
+  })
+})
+
+describe('lockedSlotsForSetup', () => {
+  const dated = new Map([['מאבטח 1', assignment()], ['מאבטח 2', assignment()]])
+  it('locks every imported slot for an אחמ"ש', () => {
+    expect([...lockedSlotsForSetup({ isAdmin: false, isCommander: true, importEnabled: true, datedBySlot: dated })]).toEqual(['מאבטח 1', 'מאבטח 2'])
+  })
+  it('locks nothing for a מנהל, when the import feature is off, or for a non-commander', () => {
+    expect(lockedSlotsForSetup({ isAdmin: true, isCommander: false, importEnabled: true, datedBySlot: dated }).size).toBe(0)
+    expect(lockedSlotsForSetup({ isAdmin: false, isCommander: true, importEnabled: false, datedBySlot: dated }).size).toBe(0)
+    expect(lockedSlotsForSetup({ isAdmin: false, isCommander: false, importEnabled: true, datedBySlot: dated }).size).toBe(0)
+  })
+  it('locks nothing when no slot has an imported assignment, so the legacy flow still works', () => {
+    expect(lockedSlotsForSetup({ isAdmin: false, isCommander: true, importEnabled: true, datedBySlot: new Map() }).size).toBe(0)
   })
 })
