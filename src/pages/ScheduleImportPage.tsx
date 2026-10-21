@@ -43,6 +43,12 @@ import { AlertIcon, BracesIcon, CheckCircleIcon, ImageIcon, UploadIcon, XIcon } 
 import type { ExtractedAssignment } from '../lib/scheduleImport/normalizeExtracted'
 import { looksLikeDayGroupedSchedule, adaptDayGroupedSchedule } from '../lib/scheduleImport/jsonScheduleAdapter'
 
+// Image import depends on the parse-schedule-image edge function, which has not
+// been verified end to end against Gemini. It is hidden unless explicitly
+// switched on for a build (VITE_ENABLE_IMAGE_IMPORT=true), so the deployed
+// screen offers Excel (and the manager-prepared JSON file) only.
+const IMAGE_IMPORT_ENABLED = import.meta.env.VITE_ENABLE_IMAGE_IMPORT === 'true'
+
 type WizardStep = 'selectWeek' | 'upload' | 'imagesSelected' | 'processing' | 'preview' | 'error'
 
 type OcrProgress = { imageIndex: number; totalImages: number; progress: number }
@@ -548,29 +554,31 @@ export function ScheduleImportPage() {
             <p className="text-xs text-text-muted">מדויק ביותר · .xls / .xlsx</p>
           </label>
 
-          <label
-            className={`card border-2 border-dashed border-border-strong p-6 flex flex-col items-center text-center gap-2 transition-colors ${
-              profilesQuery.isLoading ? 'opacity-50' : 'active:bg-primary-light/40 cursor-pointer'
-            }`}
-          >
-            <input
-              type="file"
-              accept="image/png,image/jpeg"
-              multiple
-              disabled={profilesQuery.isLoading}
-              className="hidden"
-              onChange={(e) => {
-                const files = Array.from(e.target.files ?? [])
-                if (files.length > 0) handleImagesSelected(files)
-                e.target.value = ''
-              }}
-            />
-            <div className="w-11 h-11 rounded-full bg-background-2 flex items-center justify-center text-text-secondary">
-              <ImageIcon className="w-5 h-5" />
-            </div>
-            <p className="font-bold text-text-primary text-sm">תמונות (צילומי מסך)</p>
-            <p className="text-xs text-text-muted">פחות מדויק · דורש אימות לפני פרסום</p>
-          </label>
+          {IMAGE_IMPORT_ENABLED && (
+            <label
+              className={`card border-2 border-dashed border-border-strong p-6 flex flex-col items-center text-center gap-2 transition-colors ${
+                profilesQuery.isLoading ? 'opacity-50' : 'active:bg-primary-light/40 cursor-pointer'
+              }`}
+            >
+              <input
+                type="file"
+                accept="image/png,image/jpeg"
+                multiple
+                disabled={profilesQuery.isLoading}
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? [])
+                  if (files.length > 0) handleImagesSelected(files)
+                  e.target.value = ''
+                }}
+              />
+              <div className="w-11 h-11 rounded-full bg-background-2 flex items-center justify-center text-text-secondary">
+                <ImageIcon className="w-5 h-5" />
+              </div>
+              <p className="font-bold text-text-primary text-sm">תמונות (צילומי מסך)</p>
+              <p className="text-xs text-text-muted">פחות מדויק · דורש אימות לפני פרסום</p>
+            </label>
+          )}
 
           <label
             className={`card border-2 border-dashed border-border-strong p-6 flex flex-col items-center text-center gap-2 transition-colors ${
