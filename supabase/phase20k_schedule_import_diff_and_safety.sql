@@ -19,13 +19,26 @@
 -- an explicit two-step delete confirmation so the client's "please confirm
 -- these deletions" UI is actually enforced server-side, not just displayed.
 
-drop function if exists public.publish_schedule_import(uuid, jsonb, jsonb, boolean);
+-- BACKWARD COMPATIBLE: the previous 4-parameter publish_schedule_import (as left
+-- by phase20j) is deliberately NOT dropped here. The client that is live at the
+-- time this migration runs still calls it with exactly those four named
+-- parameters, and dropping it would break that client until the new one is
+-- deployed. The new function below takes five parameters and gives
+-- p_resolutions and p_confirmed_delete_ids NO default, so a four-parameter call
+-- can only ever resolve to the old function and a five-parameter call only to
+-- the new one (PostgREST never sees an ambiguous overload). Once the new client
+-- is the only one in use, a later migration can drop the old function
+-- (see supabase/phase20k_rollback.sql for the reverse and the cleanup).
+--
+-- The drop below only removes an earlier build of THIS five-parameter function
+-- (one that had defaults), so re-applying this file on a dev database works.
+drop function if exists public.publish_schedule_import(uuid, jsonb, jsonb, uuid[], boolean);
 
 create or replace function public.publish_schedule_import(
   p_import_id uuid,
   p_assignments jsonb,
-  p_resolutions jsonb default '{}'::jsonb,
-  p_confirmed_delete_ids uuid[] default '{}'::uuid[],
+  p_resolutions jsonb,
+  p_confirmed_delete_ids uuid[],
   p_dry_run boolean default true
 )
 returns jsonb
