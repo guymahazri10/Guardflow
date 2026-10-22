@@ -24,7 +24,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     to: '/weekly-schedule',
-    label: 'לוח שבועי',
+    label: 'לו״ז שבועי',
     icon: (active) => (
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={active ? ACTIVE : INACTIVE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="4" width="18" height="16" rx="2" />

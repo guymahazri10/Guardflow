@@ -1,9 +1,9 @@
-import { Fragment, useMemo } from 'react'
-import { useFeatureFlag } from '../hooks/useFeatureFlag'
+import { Fragment, useMemo, useState } from 'react'
 import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
 import type { ShiftAssignment } from '../lib/scheduleImports'
-import { addDaysIso, formatIsraelShortDateLabel } from '../lib/israelTime'
+import { addDaysIso, formatIsraelShortDateLabel, utcIsoToIsraelHHMM } from '../lib/israelTime'
 import { weekStartIsoFor } from '../lib/scheduleImport/boardDatedSync'
+import { bucketPublishedAssignments, extraGuardPositions, weeklyCellKey } from '../lib/scheduleImport/weeklyView'
 import { allKnownPositionsForCategory } from '../lib/scheduleImport/liveBoardPositions'
 import { SHIFT_CATEGORIES, type ShiftCategory } from '../constants/shifts'
 import { AlertIcon, ClipboardIcon } from '../components/ui/StateIcon'
@@ -40,58 +40,42 @@ type Row = { shiftCategory: ShiftCategory; position: string }
 
 const COMMANDER_ROWS: Row[] = CATEGORIES.map((shiftCategory) => ({ shiftCategory, position: 'אחמ"ש' }))
 
-function cellKey(workDate: string, shiftCategory: string, position: string): string {
-  return `${workDate}|${shiftCategory}|${position}`
-}
-
 function assignmentLabel(a: ShiftAssignment): string {
   return a.actual_name ?? a.source_name ?? '—'
 }
 
 export function WeeklySchedulePage() {
-  const flag = useFeatureFlag('weekly_schedule_import')
-  const weekStartIso = weekStartIsoFor(new Date())
-  const assignmentsQuery = useShiftAssignmentsForWeek(flag.enabled ? weekStartIso : '')
+  // Viewing is open to every signed-in role (manager, אחמ"ש, מאבטח): the
+  // published schedule is not behind the import feature flag, which only
+  // gates the manager's import tooling. Row-level security already limits
+  // non-managers to published rows.
+  const currentWeekIso = weekStartIsoFor(new Date())
+  const [weekStartIso, setWeekStartIso] = useState(currentWeekIso)
+  const assignmentsQuery = useShiftAssignmentsForWeek(weekStartIso)
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDaysIso(weekStartIso, i)),
     [weekStartIso],
   )
 
-  // Only published rows are ever shown here — fetchShiftAssignmentsForWeek
-  // itself doesn't filter this. Bucketed by slot so a two-person post
-  // (slot_index 0, 1) renders both names, in a stable order.
-  const assignmentsByKey = useMemo(() => {
-    const map = new Map<string, ShiftAssignment[]>()
-    for (const a of assignmentsQuery.data ?? []) {
-      if (!a.published) continue
-      const key = cellKey(a.work_date, a.shift_category, a.position)
-      const bucket = map.get(key)
-      if (bucket) bucket.push(a)
-      else map.set(key, [a])
-    }
-    for (const bucket of map.values()) bucket.sort((a, b) => a.slot_index - b.slot_index)
-    return map
-  }, [assignmentsQuery.data])
-
-  const hasAnyPublished = assignmentsByKey.size > 0
-
-  if (flag.loading) return null
-  if (!flag.enabled) {
-    return (
-      <PageShell>
-        <PageHeader light="לוח" bold="שבועי" />
-        <div className="p-4">
-          <p className="text-sm text-text-secondary">התכונה אינה זמינה כרגע.</p>
-        </div>
-      </PageShell>
-    )
-  }
+  const assignments = useMemo(() => assignmentsQuery.data ?? [], [assignmentsQuery.data])
+  const assignmentsByKey = useMemo(() => bucketPublishedAssignments(assignments), [assignments])
+  const hasAnyPublished = useMemo(
+    () => days.some((day) => assignments.some((a) => a.published && a.work_date === day)),
+    [days, assignments],
+  )
 
   return (
     <PageShell>
-      <PageHeader light="לוח" bold="שבועי" />
+      <PageHeader light="לו״ז" bold="שבועי" />
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-6">
+        <WeekPicker
+          weekStartIso={weekStartIso}
+          isCurrent={weekStartIso === currentWeekIso}
+          onPrev={() => setWeekStartIso(addDaysIso(weekStartIso, -7))}
+          onNext={() => setWeekStartIso(addDaysIso(weekStartIso, 7))}
+          onToday={() => setWeekStartIso(currentWeekIso)}
+        />
         {assignmentsQuery.isLoading ? (
           <LoadingSkeleton />
         ) : assignmentsQuery.isError ? (
@@ -99,18 +83,58 @@ export function WeeklySchedulePage() {
         ) : !hasAnyPublished ? (
           <EmptyState />
         ) : (
-          <WeekTable days={days} assignmentsByKey={assignmentsByKey} />
+          <WeekTable days={days} assignments={assignments} assignmentsByKey={assignmentsByKey} />
         )}
       </div>
     </PageShell>
   )
 }
 
+function WeekPicker({
+  weekStartIso,
+  isCurrent,
+  onPrev,
+  onNext,
+  onToday,
+}: {
+  weekStartIso: string
+  isCurrent: boolean
+  onPrev: () => void
+  onNext: () => void
+  onToday: () => void
+}) {
+  const range = `${formatIsraelShortDateLabel(weekStartIso)} – ${formatIsraelShortDateLabel(addDaysIso(weekStartIso, 6))}`
+  return (
+    <div className="card px-3 py-2 flex items-center justify-between gap-2" aria-label="בחירת שבוע">
+      <button type="button" onClick={onPrev} className="btn-ghost px-3 py-1.5 text-sm" aria-label="השבוע הקודם">
+        ‹ הקודם
+      </button>
+      <div className="text-center">
+        <div className="text-sm font-bold" aria-live="polite">{range}</div>
+        {!isCurrent && (
+          <button type="button" onClick={onToday} className="text-xs text-primary font-semibold">
+            חזרה לשבוע הנוכחי
+          </button>
+        )}
+      </div>
+      <button type="button" onClick={onNext} className="btn-ghost px-3 py-1.5 text-sm" aria-label="השבוע הבא">
+        הבא ›
+      </button>
+    </div>
+  )
+}
+
+function hoursLabel(a: ShiftAssignment): string {
+  return `${utcIsoToIsraelHHMM(a.starts_at)}–${utcIsoToIsraelHHMM(a.ends_at)}`
+}
+
 function WeekTable({
   days,
+  assignments,
   assignmentsByKey,
 }: {
   days: string[]
+  assignments: ShiftAssignment[]
   assignmentsByKey: Map<string, ShiftAssignment[]>
 }) {
   // Reported directly: scrolling to see later days lost the position label
@@ -120,7 +144,7 @@ function WeekTable({
   // container, not a logical/direction-aware one, so this has to match
   // where the column actually is, not where "start" would be in LTR.
   function Cell({ row, day }: { row: Row; day: string }) {
-    const bucket = assignmentsByKey.get(cellKey(day, row.shiftCategory, row.position)) ?? []
+    const bucket = assignmentsByKey.get(weeklyCellKey(day, row.shiftCategory, row.position)) ?? []
     if (bucket.length === 0) {
       return <td className="px-3 py-2 text-center text-text-muted">—</td>
     }
@@ -128,7 +152,10 @@ function WeekTable({
       <td className="px-3 py-2 text-center">
         <div className="flex flex-col gap-0.5">
           {bucket.map((a) => (
-            <span key={a.id}>{assignmentLabel(a)}</span>
+            <span key={a.id}>
+              <span className="block font-medium">{assignmentLabel(a)}</span>
+              <span dir="ltr" className="block text-[11px] text-text-secondary">{hoursLabel(a)}</span>
+            </span>
           ))}
         </div>
       </td>
@@ -139,6 +166,7 @@ function WeekTable({
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
+          <caption className="sr-only">לו״ז שבועי: ימים, משמרות, עמדות ושעות</caption>
           <thead>
             <tr className="border-b border-border text-text-secondary text-xs">
               <th className="sticky right-0 z-10 bg-white px-3 py-2.5 font-bold text-right border-l border-border">
@@ -181,7 +209,10 @@ function WeekTable({
                     {SHIFT_CATEGORIES[category].label}
                   </td>
                 </tr>
-                {allKnownPositionsForCategory(category).map((position) => {
+                {[
+                  ...allKnownPositionsForCategory(category),
+                  ...extraGuardPositions(assignments, category, allKnownPositionsForCategory(category)),
+                ].map((position) => {
                   const row: Row = { shiftCategory: category, position }
                   return (
                     <tr key={position} className="border-b border-border last:border-0">
@@ -240,7 +271,7 @@ function EmptyState() {
         <ClipboardIcon />
       </div>
       <p className="font-semibold text-text-primary">לא פורסם סידור לשבוע זה</p>
-      <p className="text-text-secondary text-sm mt-1.5">המנהל צריך לייבא ולפרסם את הסידור השבועי</p>
+      <p className="text-text-secondary text-sm mt-1.5">אפשר לעבור לשבוע אחר, או לפנות למנהל כדי לפרסם את הסידור</p>
     </div>
   )
 }
