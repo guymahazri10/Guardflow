@@ -3,20 +3,33 @@
 -- Reverse of phase20j + phase20k, written against what production had BEFORE
 -- either was applied (publish_schedule_import as of phase20c with a 4-parameter
 -- signature and 'excel' hardcoded; shift_assignments_source_check without
--- 'json'). Run the parts you need, in order. Nothing here touches row data.
+-- 'json'). Nothing here touches row data.
 --
--- PART A undoes phase20k. Safe at any time: the 4-parameter function that the
--- previously deployed client calls was never dropped, so removing the new
--- 5-parameter function cannot break that client. (The new client would then
--- fall back to its "database schema is out of date" message on publish.)
+-- ORDER MATTERS. Do these in sequence and stop if a check fails:
 --
--- PART B undoes phase20j: puts the previous function body back and, only when
--- no row uses the 'json' source yet, narrows the constraint again.
+--   STEP 1 (not SQL)  Put the CODE back first: Vercel rollback to the previous
+--                     production deployment (dpl_5Z4gpusci9LsN29KeR1pGcHeqAkH,
+--                     commit 8d73ceb). Then verify the old client works: open
+--                     the import screen and run a preview. The old client calls
+--                     the 4-parameter function, which this migration set never
+--                     drops, so it works the whole time.
+--   STEP 2 (PART A)   Only after STEP 1 is verified, and only if needed:
+--                     remove the new 5-parameter function. Refuses to run
+--                     unless you confirm the client was reverted.
+--   STEP 3 (PART B)   Only if needed: restore the pre-phase20j function body
+--                     and, if no row uses the 'json' source, the old constraint.
 --
--- PART C is NOT a rollback: the cleanup to run only after the new client is the
--- only one in use (it drops the superseded 4-parameter function).
+-- Never remove a function the live client still calls. The 4-parameter
+-- function is never removed by this file (see PART C, which is cleanup only).
 
 -- ---------------------------------------------------------------- PART A ---
+-- Undoes phase20k. Requires:  set guardflow.client_reverted = 'yes';
+do $$
+begin
+  if coalesce(current_setting('guardflow.client_reverted', true), '') <> 'yes' then
+    raise exception 'Refusing to drop the new publish_schedule_import: first roll the CODE back (Vercel) and verify the old client, then run: set guardflow.client_reverted = ''yes'';';
+  end if;
+end $$;
 drop function if exists public.publish_schedule_import(uuid, jsonb, jsonb, uuid[], boolean);
 -- The EXECUTE grants phase20k added (revoke from public/anon, grant to
 -- authenticated) are intentionally left in place: they only close access to
