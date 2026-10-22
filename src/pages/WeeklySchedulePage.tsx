@@ -7,6 +7,7 @@ import { bucketPublishedAssignments, extraGuardPositions, weeklyCellKey } from '
 import { allKnownPositionsForCategory } from '../lib/scheduleImport/liveBoardPositions'
 import { SHIFT_CATEGORIES, type ShiftCategory } from '../constants/shifts'
 import { AlertIcon, ClipboardIcon } from '../components/ui/StateIcon'
+import { MyShiftsList } from '../components/MyShiftsList'
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-7xl">{children}</div>
@@ -51,6 +52,7 @@ export function WeeklySchedulePage() {
   // non-managers to published rows.
   const currentWeekIso = weekStartIsoFor(new Date())
   const [weekStartIso, setWeekStartIso] = useState(currentWeekIso)
+  const [tab, setTab] = useState<'all' | 'mine'>('all')
   const assignmentsQuery = useShiftAssignmentsForWeek(weekStartIso)
 
   const days = useMemo(
@@ -76,7 +78,34 @@ export function WeeklySchedulePage() {
           onNext={() => setWeekStartIso(addDaysIso(weekStartIso, 7))}
           onToday={() => setWeekStartIso(currentWeekIso)}
         />
-        {assignmentsQuery.isLoading ? (
+        <div role="tablist" aria-label="תצוגת לו״ז" className="flex gap-1 rounded-full bg-primary-light p-1">
+          {(
+            [
+              ['all', 'כל הסידור'],
+              ['mine', 'המשמרות שלי'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`weekly-tab-${id}`}
+              aria-selected={tab === id}
+              aria-controls={`weekly-panel-${id}`}
+              onClick={() => setTab(id)}
+              className={`flex-1 rounded-full px-3 py-2 text-sm font-bold transition-colors ${
+                tab === id ? 'bg-white text-primary shadow-sm' : 'text-text-secondary'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {tab === 'mine' ? (
+          <div role="tabpanel" id="weekly-panel-mine" aria-labelledby="weekly-tab-mine">
+            <MyShiftsList weekStartIso={weekStartIso} />
+          </div>
+        ) : assignmentsQuery.isLoading ? (
           <LoadingSkeleton />
         ) : assignmentsQuery.isError ? (
           <ErrorState onRetry={() => assignmentsQuery.refetch()} />

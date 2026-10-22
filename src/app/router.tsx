@@ -10,6 +10,7 @@ import { LoginPage } from '../pages/LoginPage'
 import { ProfilePage } from '../pages/ProfilePage'
 import { RosterEditorPage } from '../pages/RosterEditorPage'
 import { ScheduleImportPage } from '../pages/ScheduleImportPage'
+import { ScheduleLinksPage } from '../pages/ScheduleLinksPage'
 import { ShiftLivePage } from '../pages/ShiftLivePage'
 import { ShiftSetupPage } from '../pages/ShiftSetupPage'
 import { ShiftTemplateEditorPage } from '../pages/ShiftTemplateEditorPage'
@@ -36,6 +37,7 @@ export function AppRouter() {
             <Route path="/users" element={<UserManagementPage />} />
             <Route path="/shift-templates" element={<ShiftTemplatesListOrEditor />} />
             <Route path="/schedule-import" element={<ScheduleImportPage />} />
+            <Route path="/schedule-links" element={<ScheduleLinksPage />} />
           </Route>
         </Route>
       </Route>

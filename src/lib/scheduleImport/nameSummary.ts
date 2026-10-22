@@ -25,9 +25,11 @@ export function assignmentIdentityKey(a: {
 }
 
 export function linkStateOf(a: MatchedAssignment, confirmedFuzzy: ReadonlySet<string>): LinkState {
-  if (!a.planned_user_id) return 'unlinked'
-  if (a.match_confidence === 'fuzzy' && !confirmedFuzzy.has(assignmentIdentityKey(a))) return 'suggested'
-  if (a.match_confidence === 'none') return 'unlinked'
+  if (a.match_confidence === 'fuzzy') {
+    if (!a.suggested_user_id) return 'unlinked'
+    return confirmedFuzzy.has(assignmentIdentityKey(a)) ? 'linked' : 'suggested'
+  }
+  if (!a.planned_user_id || a.match_confidence === 'none') return 'unlinked'
   return 'linked'
 }
 
@@ -70,9 +72,12 @@ export function linkAssignmentToUser(a: MatchedAssignment, userId: string): Matc
 /** What is actually sent to the publish RPC: a suggestion nobody confirmed is
  *  not a link, so it goes out as no link (the name still goes out). */
 export function toPublishPayload(assignments: MatchedAssignment[], confirmedFuzzy: ReadonlySet<string>): MatchedAssignment[] {
-  return assignments.map((a) =>
-    linkStateOf(a, confirmedFuzzy) === 'suggested' ? { ...a, planned_user_id: null, match_confidence: 'none' as const } : a,
-  )
+  return assignments.map((a) => {
+    if (a.match_confidence !== 'fuzzy') return a
+    return linkStateOf(a, confirmedFuzzy) === 'linked'
+      ? { ...a, planned_user_id: a.suggested_user_id ?? null, match_confidence: 'explicit' as const }
+      : { ...a, planned_user_id: null, match_confidence: 'none' as const }
+  })
 }
 
 /**
@@ -94,7 +99,7 @@ export function carryOverLinks(
 ): MatchedAssignment[] {
   const byKey = new Map(existing.map((e) => [assignmentIdentityKey(e), e]))
   return assignments.map((a) => {
-    if (a.match_confidence === 'exact') return a
+    if (a.match_confidence === 'exact' || a.match_confidence === 'explicit') return a
     const prior = byKey.get(assignmentIdentityKey(a))
     if (!prior?.planned_user_id) return a
     if (normalizeForMatch(prior.source_name ?? '') !== normalizeForMatch(a.source_name ?? '')) return a

@@ -31,8 +31,13 @@ export type NormalizedAssignment = {
 }
 
 export type MatchedAssignment = NormalizedAssignment & {
+  /** An account is only ever put here for an exact (single, unambiguous) name
+   *  match or an explicit manager link — never for a fuzzy match. */
   planned_user_id: string | null
-  match_confidence: 'exact' | 'fuzzy' | 'none'
+  /** A similar account found by fuzzy matching: a suggestion for the manager,
+   *  not a link, and never sent to the server as one. */
+  suggested_user_id?: string | null
+  match_confidence: 'exact' | 'explicit' | 'fuzzy' | 'none'
 }
 
 export type ValidationWarning = {

@@ -65,9 +65,21 @@ function coverageScore(sourceTokens: string[], profileTokens: string[]): number 
   return totalDistance
 }
 
+/** Conservative key for a person's name: NFC, whitespace collapsed, trimmed,
+ *  lower-cased. Punctuation is NOT stripped, so different names are never
+ *  merged. Must match public.person_name_key in phase21. */
+export function personNameKey(raw: string | null | undefined): string {
+  return (raw ?? '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+/** Explicit manager decisions, keyed by personNameKey: an account id links the
+ *  name to that account; null means "do not attribute this name to anyone". */
+export type ExplicitLinks = ReadonlyMap<string, string | null>
+
 export function matchNames(
   assignments: NormalizedAssignment[],
   profiles: { id: string; full_name: string | null }[],
+  explicitLinks?: ExplicitLinks,
 ): MatchedAssignment[] {
   const normalizedProfiles = profiles
     .filter((p): p is { id: string; full_name: string } => !!p.full_name)
@@ -79,6 +91,15 @@ export function matchNames(
   return assignments.map((assignment) => {
     if (!assignment.source_name) {
       return { ...assignment, planned_user_id: null, match_confidence: 'none' }
+    }
+
+    // An explicit manager decision always beats automatic matching.
+    const explicitKey = personNameKey(assignment.source_name)
+    if (explicitLinks?.has(explicitKey)) {
+      const userId = explicitLinks.get(explicitKey) ?? null
+      return userId
+        ? { ...assignment, planned_user_id: userId, match_confidence: 'explicit' }
+        : { ...assignment, planned_user_id: null, match_confidence: 'none' }
     }
 
     const normalizedSource = normalizeForMatch(assignment.source_name)
@@ -120,7 +141,8 @@ export function matchNames(
     }
 
     if (best) {
-      return { ...assignment, planned_user_id: best.id, match_confidence: 'fuzzy' }
+      // A suggestion for the manager only: it is not a link.
+      return { ...assignment, planned_user_id: null, suggested_user_id: best.id, match_confidence: 'fuzzy' }
     }
 
     return { ...assignment, planned_user_id: null, match_confidence: 'none' }

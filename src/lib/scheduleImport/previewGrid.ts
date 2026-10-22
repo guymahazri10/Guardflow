@@ -89,7 +89,7 @@ export function buildPreviewGrid(
       slotIndex: a.slot_index,
       linkState: state,
       assignmentIndex: index,
-      suggestedUserId: state === 'suggested' ? a.planned_user_id : null,
+      suggestedUserId: state === 'suggested' ? (a.suggested_user_id ?? null) : null,
     })
   })
   for (const row of rows) for (const cell of row.cells) cell.sort((x, y) => x.slotIndex - y.slotIndex)

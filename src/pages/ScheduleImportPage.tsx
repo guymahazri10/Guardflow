@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { detectFileKind } from '../lib/scheduleImport/detectFileKind'
 import { parseExcelSchedule } from '../lib/scheduleImport/parseExcelSchedule'
 import { parseImageSchedule } from '../lib/scheduleImport/parseImageSchedule'
@@ -8,6 +9,8 @@ import {
   type NormalizeExtractedResult,
 } from '../lib/scheduleImport/normalizeExtracted'
 import { matchNames } from '../lib/scheduleImport/matchNames'
+import { linksToMap } from '../lib/scheduleImport/workerNames'
+import { fetchScheduleWorkerLinks } from '../lib/scheduleWorkerLinks'
 import { validateSchedule, type ExistingAssignmentSummary } from '../lib/scheduleImport/validateSchedule'
 import { detectOverlaps } from '../lib/scheduleImport/detectOverlaps'
 import { NIGHT_GUARD_ROLE } from '../lib/scheduleImport/positions'
@@ -233,8 +236,12 @@ export function ScheduleImportPage() {
 
     const profiles = (profilesQuery.data ?? []).map((p) => ({ id: p.id, full_name: p.full_name }))
     const existingAssignments = await fetchShiftAssignmentsForWeek(selectedWeekStart)
+    // Explicit manager links beat automatic matching. The import must work
+    // without them (none made yet, or the table not deployed yet), so a failure
+    // to read them just means "no explicit links".
+    const explicitLinks = await fetchScheduleWorkerLinks().then(linksToMap).catch(() => undefined)
     // Links made earlier survive a re-upload (see carryOverLinks).
-    const matched = carryOverLinks(matchNames(normalized, profiles), existingAssignments)
+    const matched = carryOverLinks(matchNames(normalized, profiles, explicitLinks), existingAssignments)
     const existingSummaries: ExistingAssignmentSummary[] = existingAssignments.map((a) => ({
       work_date: a.work_date,
       shift_category: a.shift_category,
@@ -481,6 +488,9 @@ export function ScheduleImportPage() {
         <PageHeader light="ייבוא" bold="סידור שבועי" />
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-6">
           {errorMessage && <ErrorBanner message={errorMessage} />}
+          <Link to="/schedule-links" className="card px-4 py-3 text-sm font-semibold text-primary text-center">
+            קישור עובדים לסידור (להצגת ״המשמרות שלי״)
+          </Link>
           <div className="card p-4 flex flex-col gap-3">
             <div>
               <p className="font-bold text-text-primary text-sm">לאיזה שבוע מיועד הקובץ?</p>
