@@ -25,6 +25,10 @@ export type MyShiftsResult = {
   /** whether the signed-in account could be matched to a schedule name at all */
   linked: boolean
   link_kind: 'explicit' | 'exact' | null
+  /** Why a name that looks like the user's is not attributed to them. */
+  blocked_reason: 'shared_name' | 'duplicate_accounts' | 'overlap_review' | null
+  /** Rows of the user's name held back this week because their times overlap. */
+  held_back: number
   shifts: MyShift[]
 }
 

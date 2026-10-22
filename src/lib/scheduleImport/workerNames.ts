@@ -27,10 +27,16 @@ export type ScheduleNameRow = {
   reason: 'duplicate_accounts' | 'overlapping_rows' | null
 }
 
-/** Hand-over overlaps are normal; only a real overlap means two people. */
-const OVERLAP_MS = 30 * 60 * 1000
-
-function hasRealOverlap(rows: SchedulePerson[]): boolean {
+/**
+ * Rows of one name whose times overlap are a SIGN to check — the name may be
+ * two people — never proof of identity either way. No business tolerance for
+ * short overlaps has been approved, so any overlap counts (rows that merely
+ * touch, one ending exactly when the next starts, do not). This only decides
+ * whether the name is flagged for the manager and held out of automatic
+ * "My shifts" attribution; it does not touch publishing rules.
+ * Keep in step with public.get_my_shifts.
+ */
+function hasOverlap(rows: SchedulePerson[]): boolean {
   const live = rows.filter((r) => !r.is_manually_edited)
   for (let i = 0; i < live.length; i++) {
     for (let j = i + 1; j < live.length; j++) {
@@ -38,7 +44,7 @@ function hasRealOverlap(rows: SchedulePerson[]): boolean {
       const b = live[j]
       const start = Math.max(Date.parse(a.starts_at), Date.parse(b.starts_at))
       const end = Math.min(Date.parse(a.ends_at), Date.parse(b.ends_at))
-      if (end - start > OVERLAP_MS) return true
+      if (end > start) return true
     }
   }
   return false
@@ -89,7 +95,7 @@ export function classifyScheduleNames(
       continue
     }
     if (owners.length === 1) {
-      if (hasRealOverlap(rows)) out.push({ ...base, status: 'ambiguous', userId: null, reason: 'overlapping_rows' })
+      if (hasOverlap(rows)) out.push({ ...base, status: 'ambiguous', userId: null, reason: 'overlapping_rows' })
       else out.push({ ...base, status: 'exact', userId: owners[0], reason: null })
       continue
     }
@@ -102,7 +108,7 @@ export function classifyScheduleNames(
       status: 'unlinked',
       userId: null,
       suggestedUserId: m?.suggested_user_id ?? null,
-      reason: hasRealOverlap(rows) ? 'overlapping_rows' : null,
+      reason: hasOverlap(rows) ? 'overlapping_rows' : null,
     })
   }
 

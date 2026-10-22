@@ -168,6 +168,7 @@ begin
   assert (select is_ambiguous from public.schedule_worker_links where source_key = 'אורי כהן'), 'M3 FAILED: ambiguous decision not stored';
   r := pg_temp.mine(guard, w);
   assert jsonb_array_length(r->'shifts') = 2, 'M3 FAILED: ambiguous name must not be attributed: '||jsonb_array_length(r->'shifts');
+  assert r->>'blocked_reason' = 'shared_name', 'M3 FAILED: shared-name marking must be reported: '||r::text;
 
   -- unlink returns to automatic matching
   perform pg_temp.as_user(manager);
@@ -193,13 +194,22 @@ begin
    (w, 'morning','מאבטח','CD',0,(w||' 06:45+02')::timestamptz,(w||' 15:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true);
   r := pg_temp.mine(guard, w);
   assert jsonb_array_length(r->'shifts') = 0, 'M4 FAILED: overlapping same-name rows attributed automatically: '||r::text;
-  -- back-to-back (25 min hand-over) rows of the same name are NOT treated as two people
+  assert (r->>'blocked_reason') = 'overlap_review' and (r->>'held_back')::int = 2, 'M4 FAILED: overlap should be reported as needing review: '||r::text;
+  -- even a SHORT overlap (25 min hand-over) is only a sign to review: no tolerance has been approved,
+  -- so nothing is attributed automatically, and it is reported rather than silently hidden
   delete from public.shift_assignments where work_date = w;
   insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, actual_name, source, published) values
    (w, 'morning','מאבטח','AB',0,(w||' 06:45+02')::timestamptz,(w||' 15:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true),
    (w, 'afternoon','מאבטח','AB',0,(w||' 14:45+02')::timestamptz,(w||' 23:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true);
   r := pg_temp.mine(guard, w);
-  assert jsonb_array_length(r->'shifts') = 2, 'M4 FAILED: hand-over overlap wrongly treated as ambiguity: '||r::text;
+  assert jsonb_array_length(r->'shifts') = 0 and r->>'blocked_reason' = 'overlap_review', 'M4 FAILED: short overlap must not prove identity: '||r::text;
+  -- touching but not overlapping (ends 15:10, starts 15:10) is not a sign of anything
+  delete from public.shift_assignments where work_date = w;
+  insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, actual_name, source, published) values
+   (w, 'morning','מאבטח','AB',0,(w||' 06:45+02')::timestamptz,(w||' 15:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true),
+   (w, 'afternoon','מאבטח','AB',0,(w||' 15:10+02')::timestamptz,(w||' 23:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true);
+  r := pg_temp.mine(guard, w);
+  assert jsonb_array_length(r->'shifts') = 2 and r->>'blocked_reason' is null, 'M4 FAILED: adjacent rows wrongly held back: '||r::text;
   raise notice 'M4 PASSED';
 end $$;
 

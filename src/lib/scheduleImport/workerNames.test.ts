@@ -46,9 +46,16 @@ describe('classifyScheduleNames', () => {
     expect(r.reason).toBe('overlapping_rows')
   })
 
-  it('a 25 minute hand-over is not an ambiguity', () => {
+  it('even a short overlap is only a sign to review, so the name is flagged (no tolerance approved)', () => {
     const handover = [row('אורי כהן', d(5, '04:00'), d(5, '12:10')), row('אורי כהן', d(5, '11:45'), d(5, '20:10'))]
-    expect(status(classifyScheduleNames(handover, profiles, []), 'אורי כהן')!.status).toBe('exact')
+    const r = status(classifyScheduleNames(handover, profiles, []), 'אורי כהן')!
+    expect(r.status).toBe('ambiguous')
+    expect(r.userId).toBeNull()
+  })
+
+  it('rows that only touch (one ends when the next starts) are not an overlap', () => {
+    const touching = [row('אורי כהן', d(5, '04:00'), d(5, '12:00')), row('אורי כהן', d(5, '12:00'), d(5, '20:00'))]
+    expect(status(classifyScheduleNames(touching, profiles, []), 'אורי כהן')!.status).toBe('exact')
   })
 
   it('a similar-but-not-equal name is only a suggestion, and not linked', () => {

@@ -15,7 +15,7 @@ const keys = { links: ['schedule-worker-links'] as const, people: ['schedule-peo
 const STATUS_LABEL: Record<NameStatus, string> = {
   ambiguous: 'עמום — דרושה הכרעה',
   unlinked: 'לא מקושר',
-  marked_ambiguous: 'סומן: לא לשייך',
+  marked_ambiguous: 'שם משותף — לא משויך',
   explicit: 'מקושר',
   exact: 'שם זהה (אוטומטי)',
 }
@@ -137,15 +137,21 @@ function NameCard({
       {row.status === 'ambiguous' && (
         <p className="text-xs text-danger">
           {row.reason === 'duplicate_accounts'
-            ? 'שני חשבונות נושאים את השם הזה — אין לנחש. בחר חשבון או סמן "לא לשייך".'
-            : 'השם מופיע בשתי משמרות חופפות, כלומר כנראה שני אנשים. בחר חשבון אחד או סמן "לא לשייך".'}
+            ? 'שני חשבונות נושאים את השם הזה — אין לנחש. בחר חשבון, או סמן "שם משותף".'
+            : 'השם מופיע בשיבוצים שחופפים בזמן. חפיפה היא סימן לבדיקה ולא הוכחה — ייתכן שני אנשים באותו שם, וייתכן אדם אחד. בחר חשבון, או סמן "שם משותף".'}
         </p>
       )}
       {row.status === 'unlinked' && row.reason === 'overlapping_rows' && (
-        <p className="text-xs text-danger">השם מופיע בשתי משמרות חופפות — ייתכן ששני אנשים.</p>
+        <p className="text-xs text-danger">השם מופיע בשיבוצים חופפים — סימן לבדיקה, לא הוכחה.</p>
       )}
       {row.status === 'unlinked' && row.suggestedUserId && !selected && (
         <p className="text-xs text-text-secondary">הצעה (לא הוחלה): {nameOf(row.suggestedUserId)}</p>
+      )}
+      {row.status === 'marked_ambiguous' && (
+        <p className="text-xs text-text-secondary">
+          סומן כשם משותף לכמה עובדים: המשמרות האישיות לפי השם הזה דורשות זיהוי נוסף ולכן לא יוצגו ב״המשמרות שלי״ לאף אחד.
+          כל השיבוצים נשארים ב״כל הסידור״ ולא השתנו.
+        </p>
       )}
       {(row.status === 'explicit' || row.status === 'exact') && (
         <p className="text-xs text-text-secondary">חשבון: {nameOf(row.userId)}</p>
@@ -167,8 +173,8 @@ function NameCard({
         <button type="button" className="btn-primary px-4 py-2 text-sm" disabled={!selected || busy} onClick={() => onLink(selected)}>
           קשר
         </button>
-        <button type="button" className="btn-ghost px-3 py-2 text-sm" disabled={busy} onClick={() => onLink(null)}>
-          לא לשייך
+        <button type="button" className="btn-ghost px-3 py-2 text-sm" disabled={busy} onClick={() => onLink(null)} title="שני עובדים או יותר חולקים את השם הזה בסידור">
+          שם משותף
         </button>
         {decidedByManager && (
           <button type="button" className="btn-ghost px-3 py-2 text-sm" disabled={busy} onClick={onUnlink}>

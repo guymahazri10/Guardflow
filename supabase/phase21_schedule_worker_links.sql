@@ -116,13 +116,16 @@ $$;
 --          means nobody), else
 --       2. my profile name equals the row's name (conservative key), exactly
 --          one profile carries that name, the name appears in a published
---          schedule, and it is not used by two people at the same time.
+--          schedule, and none of its rows overlap another row with the same
+--          name (an overlap is a sign to review, not proof of identity).
 --
 -- planned_user_id / actual_user_id on un-replaced rows are ignored: they may
 -- come from an old fuzzy match.
 --
--- Returns { linked, link_kind, shifts }. linked says whether the account can be
--- identified at all, so an empty week can be told apart from "no link".
+-- Returns { linked, link_kind, blocked_reason, held_back, shifts }. linked says
+-- whether the account can be identified at all, so an empty week can be told
+-- apart from "no link". blocked_reason ('shared_name' | 'duplicate_accounts' |
+-- 'overlap_review') explains why a name that looks like mine is not attributed.
 
 create or replace function public.get_my_shifts(p_week_start date)
 returns jsonb
@@ -137,6 +140,8 @@ declare
   explicit_linked boolean;
   exact_ok boolean;
   shifts jsonb;
+  blocked text;
+  held_back int := 0;
 begin
   if me is null then
     raise exception 'Not signed in' using errcode = '42501';
@@ -180,8 +185,11 @@ begin
             or (
               exact_ok
               and public.person_name_key(a.source_name) = my_key
-              -- the same name on two rows that really overlap in time means two
-              -- different people: attribute nothing automatically
+              -- the same name on two rows whose times overlap is a sign that the
+              -- name may be two people. It is a reason to ask the manager, never
+              -- proof of identity either way: attribute nothing automatically
+              -- (an explicit link still decides). No business tolerance for
+              -- short overlaps has been approved, so ANY overlap counts.
               and not exists (
                 select 1 from public.shift_assignments b
                 where b.id <> a.id
@@ -189,7 +197,7 @@ begin
                   and not b.is_manually_edited
                   and b.work_date between a.work_date - 1 and a.work_date + 1
                   and public.person_name_key(b.source_name) = my_key
-                  and least(a.ends_at, b.ends_at) - greatest(a.starts_at, b.starts_at) > interval '30 minutes'
+                  and least(a.ends_at, b.ends_at) > greatest(a.starts_at, b.starts_at)
               )
             )
           )
@@ -197,9 +205,36 @@ begin
       )
   ) r;
 
+  -- Why a name that looks like mine is NOT attributed, so the client can say so
+  -- instead of "no shifts": the manager marked the name as shared by several
+  -- people, two accounts carry it, or its rows overlap and need a check.
+  if coalesce(my_key, '') <> '' then
+    if exists (select 1 from public.schedule_worker_links l where l.source_key = my_key and l.is_ambiguous) then
+      blocked := 'shared_name';
+    elsif not explicit_linked and (select count(*) from public.profiles p where public.person_name_key(p.full_name) = my_key) > 1 then
+      blocked := 'duplicate_accounts';
+    elsif exact_ok then
+      select count(*) into held_back
+      from public.shift_assignments a
+      where a.published and not a.is_manually_edited
+        and a.work_date between p_week_start and p_week_start + 6
+        and public.person_name_key(a.source_name) = my_key
+        and exists (
+          select 1 from public.shift_assignments b
+          where b.id <> a.id and b.published and not b.is_manually_edited
+            and b.work_date between a.work_date - 1 and a.work_date + 1
+            and public.person_name_key(b.source_name) = my_key
+            and least(a.ends_at, b.ends_at) > greatest(a.starts_at, b.starts_at)
+        );
+      if held_back > 0 then blocked := 'overlap_review'; end if;
+    end if;
+  end if;
+
   return jsonb_build_object(
     'linked', explicit_linked or exact_ok,
     'link_kind', case when explicit_linked then 'explicit' when exact_ok then 'exact' else null end,
+    'blocked_reason', blocked,
+    'held_back', held_back,
     'shifts', shifts
   );
 end;

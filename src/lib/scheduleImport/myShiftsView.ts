@@ -3,10 +3,14 @@ import type { MyShift, MyShiftsResult } from '../scheduleWorkerLinks'
 /** Which message the "My shifts" tab shows. An account that cannot be matched
  *  to a name is told so even in a week where it has no shifts; a matched
  *  account with an empty week is told it simply has none. */
-export type MyShiftsState = 'shifts' | 'no_shifts' | 'not_linked'
+export type MyShiftsState = 'shifts' | 'no_shifts' | 'not_linked' | 'needs_identification'
 
+/** 'needs_identification': the name in the schedule is shared by several
+ *  people (or its rows overlap), so personal shifts need extra identification
+ *  from the manager. The whole schedule stays in "All schedule". */
 export function myShiftsState(result: MyShiftsResult): MyShiftsState {
   if (result.shifts.length > 0) return 'shifts'
+  if (result.blocked_reason) return 'needs_identification'
   return result.linked ? 'no_shifts' : 'not_linked'
 }
 

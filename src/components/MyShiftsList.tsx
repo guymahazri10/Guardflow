@@ -48,6 +48,20 @@ export function MyShiftsList({ weekStartIso }: { weekStartIso: string }) {
       </div>
     )
   }
+  if (state === 'needs_identification') {
+    return (
+      <div className="card p-6 text-center" role="status">
+        <div className="w-11 h-11 rounded-full bg-primary-light flex items-center justify-center mx-auto mb-3 text-text-secondary">
+          <ClipboardIcon />
+        </div>
+        <p className="font-semibold">המשמרות האישיות שלך דורשות זיהוי נוסף</p>
+        <p className="text-sm text-text-secondary mt-1.5">
+          השם שלך בסידור משותף, או מופיע בשיבוצים חופפים, ולכן אי אפשר לדעת בוודאות איזה מהם שלך. אפשר לפנות למנהל. את כל
+          השיבוצים אפשר לראות ב״כל הסידור״.
+        </p>
+      </div>
+    )
+  }
   if (state === 'no_shifts') {
     return (
       <div className="card p-6 text-center" role="status">
@@ -60,6 +74,12 @@ export function MyShiftsList({ weekStartIso }: { weekStartIso: string }) {
   }
 
   return (
+    <>
+    {query.data.held_back > 0 && (
+      <p className="text-xs text-text-secondary mb-2" role="note">
+        {query.data.held_back} משמרות בשם שלך חופפות בזמן ולכן לא מוצגות כאן עד שהמנהל יזהה אותן. הן מופיעות ב״כל הסידור״.
+      </p>
+    )}
     <ol className="flex flex-col gap-2" aria-label="המשמרות שלי">
       {shifts.map((s) => (
         <li key={s.id} className="card px-3.5 py-3 flex items-center justify-between gap-3">
@@ -79,5 +99,6 @@ export function MyShiftsList({ weekStartIso }: { weekStartIso: string }) {
         </li>
       ))}
     </ol>
+    </>
   )
 }
