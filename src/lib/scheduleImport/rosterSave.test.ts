@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { planDatedWrites, performRosterSave, type SaveDeps } from './rosterSave'
 import type { GuardAssignment } from '../rosterBoards'
 import type { ShiftAssignment } from '../scheduleImports'
-import { ScheduleEditError } from '../scheduleEdits'
+import { ScheduleEditError } from '../scheduleEditErrors'
 
 function assignment(overrides: Partial<ShiftAssignment> = {}): ShiftAssignment {
   return {

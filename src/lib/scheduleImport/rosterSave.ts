@@ -1,7 +1,7 @@
 import type { GuardAssignment } from '../rosterBoards'
 import type { ShiftAssignment } from '../scheduleImports'
 import { effectiveAssignmentName } from './boardDatedSync'
-import { ScheduleEditError } from '../scheduleEdits'
+import { ScheduleEditError } from '../scheduleEditErrors'
 
 /**
  * The save flow behind ShiftSetupPage's "שמור ועבור לתצוגה", lifted out of the

@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { mapEditError } from './scheduleEdits'
+import { mapEditError } from './scheduleEditErrors'
 import type { MatchedAssignment } from './scheduleImport/types'
 
 export type ScheduleImportRow = {
