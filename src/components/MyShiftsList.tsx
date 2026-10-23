@@ -56,7 +56,7 @@ export function MyShiftsList({ weekStartIso }: { weekStartIso: string }) {
         </div>
         <p className="font-semibold">המשמרות האישיות שלך דורשות זיהוי נוסף</p>
         <p className="text-sm text-text-secondary mt-1.5">
-          השם שלך בסידור משותף, או מופיע בשיבוצים חופפים, ולכן אי אפשר לדעת בוודאות איזה מהם שלך. אפשר לפנות למנהל. את כל
+          השם שלך בסידור משותף, או שיש כמה חשבונות באותו שם, ולכן אי אפשר לדעת בוודאות איזה מהשיבוצים שלך. אפשר לפנות למנהל. את כל
           השיבוצים אפשר לראות ב״כל הסידור״.
         </p>
       </div>
@@ -74,12 +74,6 @@ export function MyShiftsList({ weekStartIso }: { weekStartIso: string }) {
   }
 
   return (
-    <>
-    {query.data.held_back > 0 && (
-      <p className="text-xs text-text-secondary mb-2" role="note">
-        {query.data.held_back} משמרות בשם שלך חופפות בזמן ולכן לא מוצגות כאן עד שהמנהל יזהה אותן. הן מופיעות ב״כל הסידור״.
-      </p>
-    )}
     <ol className="flex flex-col gap-2" aria-label="המשמרות שלי">
       {shifts.map((s) => (
         <li key={s.id} className="card px-3.5 py-3 flex items-center justify-between gap-3">
@@ -89,6 +83,11 @@ export function MyShiftsList({ weekStartIso }: { weekStartIso: string }) {
               {SHIFT_CATEGORIES[s.shift_category].label} · {s.position}
             </div>
             {s.is_manually_edited && <div className="text-[11px] text-text-muted">שובצת בהחלפה</div>}
+            {s.overlaps && (
+              <div className="mt-1.5 inline-block rounded-lg bg-warning-light px-2 py-1 text-xs font-semibold text-warning">
+                <span aria-hidden="true">⚠ </span>קיימת חפיפה בשעות — יש לבדוק מול האחמ״ש
+              </div>
+            )}
           </div>
           <div className="text-left shrink-0">
             <div dir="ltr" className="font-semibold">
@@ -99,6 +98,5 @@ export function MyShiftsList({ weekStartIso }: { weekStartIso: string }) {
         </li>
       ))}
     </ol>
-    </>
   )
 }

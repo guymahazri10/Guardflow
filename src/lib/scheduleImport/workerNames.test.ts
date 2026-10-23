@@ -39,23 +39,10 @@ describe('classifyScheduleNames', () => {
     expect(r.userId).toBeNull()
   })
 
-  it('the same name on two rows at the same time is ambiguous (two people)', () => {
-    const twice = [row('אורי כהן', d(5, '04:00'), d(5, '12:00')), row('אורי כהן', d(5, '05:00'), d(5, '13:00'))]
-    const r = status(classifyScheduleNames(twice, profiles, []), 'אורי כהן')!
-    expect(r.status).toBe('ambiguous')
-    expect(r.reason).toBe('overlapping_rows')
-  })
-
-  it('even a short overlap is only a sign to review, so the name is flagged (no tolerance approved)', () => {
-    const handover = [row('אורי כהן', d(5, '04:00'), d(5, '12:10')), row('אורי כהן', d(5, '11:45'), d(5, '20:10'))]
-    const r = status(classifyScheduleNames(handover, profiles, []), 'אורי כהן')!
-    expect(r.status).toBe('ambiguous')
-    expect(r.userId).toBeNull()
-  })
-
-  it('rows that only touch (one ends when the next starts) are not an overlap', () => {
-    const touching = [row('אורי כהן', d(5, '04:00'), d(5, '12:00')), row('אורי כהן', d(5, '12:00'), d(5, '20:00'))]
-    expect(status(classifyScheduleNames(touching, profiles, []), 'אורי כהן')!.status).toBe('exact')
+  it('overlapping times do not stop identification: a unique exact name stays an automatic match', () => {
+    const overlapping = [row('אורי כהן', d(5, '04:00'), d(5, '12:00')), row('אורי כהן', d(5, '05:00'), d(5, '13:00'))]
+    const r = status(classifyScheduleNames(overlapping, profiles, []), 'אורי כהן')!
+    expect(r).toMatchObject({ status: 'exact', userId: 'a', reason: null })
   })
 
   it('a similar-but-not-equal name is only a suggestion, and not linked', () => {

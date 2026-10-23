@@ -19,6 +19,8 @@ export type MyShift = {
   source_name: string | null
   actual_name: string | null
   is_manually_edited: boolean
+  /** Overlaps another shift of the same person: shown with a warning, never hidden. */
+  overlaps: boolean
 }
 
 export type MyShiftsResult = {
@@ -26,9 +28,7 @@ export type MyShiftsResult = {
   linked: boolean
   link_kind: 'explicit' | 'exact' | null
   /** Why a name that looks like the user's is not attributed to them. */
-  blocked_reason: 'shared_name' | 'duplicate_accounts' | 'overlap_review' | null
-  /** Rows of the user's name held back this week because their times overlap. */
-  held_back: number
+  blocked_reason: 'shared_name' | 'duplicate_accounts' | null
   shifts: MyShift[]
 }
 

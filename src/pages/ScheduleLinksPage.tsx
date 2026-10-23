@@ -168,13 +168,8 @@ function NameCard({
 
       {row.status === 'ambiguous' && (
         <p className="text-xs text-text-secondary">
-          {row.reason === 'duplicate_accounts'
-            ? 'שני חשבונות נושאים את השם הזה — אין לנחש. בחר את החשבון הנכון, או סמן "שני עובדים בעלי אותו שם".'
-            : 'השם מופיע בשיבוצים שחופפים בזמן. חפיפה היא סימן לבדיקה ולא הוכחה — ייתכן שני אנשים באותו שם, וייתכן אדם אחד. בחר את החשבון הנכון, או סמן "שני עובדים בעלי אותו שם".'}
+          שני חשבונות נושאים את השם הזה — אין לנחש. בחר את החשבון הנכון, או סמן "שני עובדים בעלי אותו שם".
         </p>
-      )}
-      {row.status === 'unlinked' && row.reason === 'overlapping_rows' && (
-        <p className="text-xs text-text-secondary">השם מופיע בשיבוצים חופפים — סימן לבדיקה, לא הוכחה.</p>
       )}
       {row.status === 'unlinked' && row.suggestedUserId && !selected && (
         <p className="text-xs text-text-secondary">הצעה (לא הוחלה): {nameOf(row.suggestedUserId)}</p>

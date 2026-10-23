@@ -180,36 +180,57 @@ begin
 end $$;
 
 -- ===========================================================================
--- M4: same name on two overlapping rows (two people) is not attributed
---     automatically to the one account that carries the name
+-- M4: overlapping shifts of an identified person are SHOWN, flagged with
+--     overlaps = true (never hidden); touching shifts are not flagged; a name
+--     carried by two accounts still gets no automatic attribution
 -- ===========================================================================
 do $$
 declare
   guard uuid := '00000000-0000-0000-0000-000000000003';
+  u1 uuid := '00000000-0000-0000-0000-0000000000a1';
+  u2 uuid := '00000000-0000-0000-0000-0000000000a2';
   w date := date '2031-02-02';
   r jsonb;
 begin
+  -- two shifts at the same hour (two posts)
   insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, actual_name, source, published) values
    (w, 'morning','מאבטח','AB',0,(w||' 06:45+02')::timestamptz,(w||' 15:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true),
    (w, 'morning','מאבטח','CD',0,(w||' 06:45+02')::timestamptz,(w||' 15:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true);
   r := pg_temp.mine(guard, w);
-  assert jsonb_array_length(r->'shifts') = 0, 'M4 FAILED: overlapping same-name rows attributed automatically: '||r::text;
-  assert (r->>'blocked_reason') = 'overlap_review' and (r->>'held_back')::int = 2, 'M4 FAILED: overlap should be reported as needing review: '||r::text;
-  -- even a SHORT overlap (25 min hand-over) is only a sign to review: no tolerance has been approved,
-  -- so nothing is attributed automatically, and it is reported rather than silently hidden
+  assert (r->>'linked')::boolean and r->>'blocked_reason' is null, 'M4 FAILED: identified account must stay linked: '||r::text;
+  assert jsonb_array_length(r->'shifts') = 2, 'M4 FAILED: overlapping shifts must be shown, got '||jsonb_array_length(r->'shifts');
+  assert (select bool_and((s->>'overlaps')::boolean) from jsonb_array_elements(r->'shifts') s), 'M4 FAILED: both overlapping shifts must carry overlaps=true: '||r::text;
+
+  -- a short (25 min) overlap is shown and flagged too: no tolerance is applied
   delete from public.shift_assignments where work_date = w;
   insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, actual_name, source, published) values
    (w, 'morning','מאבטח','AB',0,(w||' 06:45+02')::timestamptz,(w||' 15:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true),
    (w, 'afternoon','מאבטח','AB',0,(w||' 14:45+02')::timestamptz,(w||' 23:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true);
   r := pg_temp.mine(guard, w);
-  assert jsonb_array_length(r->'shifts') = 0 and r->>'blocked_reason' = 'overlap_review', 'M4 FAILED: short overlap must not prove identity: '||r::text;
-  -- touching but not overlapping (ends 15:10, starts 15:10) is not a sign of anything
+  assert jsonb_array_length(r->'shifts') = 2 and (select bool_and((s->>'overlaps')::boolean) from jsonb_array_elements(r->'shifts') s), 'M4 FAILED: 25 min overlap must be shown and flagged: '||r::text;
+
+  -- touching (ends 15:10, starts 15:10) is not an overlap
   delete from public.shift_assignments where work_date = w;
   insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, actual_name, source, published) values
    (w, 'morning','מאבטח','AB',0,(w||' 06:45+02')::timestamptz,(w||' 15:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true),
    (w, 'afternoon','מאבטח','AB',0,(w||' 15:10+02')::timestamptz,(w||' 23:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true);
   r := pg_temp.mine(guard, w);
-  assert jsonb_array_length(r->'shifts') = 2 and r->>'blocked_reason' is null, 'M4 FAILED: adjacent rows wrongly held back: '||r::text;
+  assert jsonb_array_length(r->'shifts') = 2 and not (select bool_or((s->>'overlaps')::boolean) from jsonb_array_elements(r->'shifts') s), 'M4 FAILED: touching shifts wrongly flagged: '||r::text;
+
+  -- a night shift crossing into the next week still flags an overlap with next week's first shift
+  delete from public.shift_assignments where work_date >= w and work_date < w + 14;
+  insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, actual_name, source, published) values
+   (w+6, 'night','מאבטח','AB',0,((w+6)||' 22:45+02')::timestamptz,((w+7)||' 07:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true),
+   (w+7, 'morning','מאבטח','CD',0,((w+7)||' 06:45+02')::timestamptz,((w+7)||' 15:10+02')::timestamptz,'אורי כהן','אורי כהן','excel',true);
+  r := pg_temp.mine(guard, w);
+  assert jsonb_array_length(r->'shifts') = 1 and (r->'shifts'->0->>'overlaps')::boolean, 'M4 FAILED: cross-week overlap not flagged: '||r::text;
+
+  -- a name carried by two accounts gets NO automatic attribution; u1 holds the explicit link from M3,
+  -- u2 (same name, no link) gets nothing
+  insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, actual_name, source, published) values
+   (w+1, 'morning','מאבטח','EFG',0,((w+1)||' 06:45+02')::timestamptz,((w+1)||' 15:10+02')::timestamptz,'תמר גל','תמר גל','excel',true);
+  r := pg_temp.mine(u2, w);
+  assert jsonb_array_length(r->'shifts') = 0 and r->>'blocked_reason' = 'duplicate_accounts', 'M4 FAILED: duplicate-name account must not be attributed: '||r::text;
   raise notice 'M4 PASSED';
 end $$;
 

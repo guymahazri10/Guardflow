@@ -4,19 +4,19 @@ import type { MyShift } from '../scheduleWorkerLinks'
 
 const s = (over: Partial<MyShift>): MyShift => ({
   id: 'x', work_date: '2031-01-05', shift_category: 'morning', worker_kind: 'מאבטח', position: 'AB', slot_index: 0,
-  starts_at: '2031-01-05T04:00:00Z', ends_at: '2031-01-05T12:00:00Z', source_name: 'x', actual_name: 'x', is_manually_edited: false, ...over,
+  starts_at: '2031-01-05T04:00:00Z', ends_at: '2031-01-05T12:00:00Z', source_name: 'x', actual_name: 'x', is_manually_edited: false, overlaps: false, ...over,
 })
 
 describe('my shifts view', () => {
   it('tells "not linked" apart from "no shifts this week", also for an empty week', () => {
-    expect(myShiftsState({ linked: false, link_kind: null, blocked_reason: null, held_back: 0, shifts: [] })).toBe('not_linked')
-    expect(myShiftsState({ linked: true, link_kind: 'exact', blocked_reason: null, held_back: 0, shifts: [] })).toBe('no_shifts')
-    expect(myShiftsState({ linked: true, link_kind: 'explicit', blocked_reason: null, held_back: 0, shifts: [s({})] })).toBe('shifts')
+    expect(myShiftsState({ linked: false, link_kind: null, blocked_reason: null, shifts: [] })).toBe('not_linked')
+    expect(myShiftsState({ linked: true, link_kind: 'exact', blocked_reason: null, shifts: [] })).toBe('no_shifts')
+    expect(myShiftsState({ linked: true, link_kind: 'explicit', blocked_reason: null, shifts: [s({})] })).toBe('shifts')
     // a shared / overlapping name is neither "not linked" nor "no shifts"
-    expect(myShiftsState({ linked: false, link_kind: null, blocked_reason: 'shared_name', held_back: 0, shifts: [] })).toBe('needs_identification')
-    expect(myShiftsState({ linked: true, link_kind: 'exact', blocked_reason: 'overlap_review', held_back: 2, shifts: [] })).toBe('needs_identification')
+    expect(myShiftsState({ linked: false, link_kind: null, blocked_reason: 'shared_name', shifts: [] })).toBe('needs_identification')
+    expect(myShiftsState({ linked: true, link_kind: 'exact', blocked_reason: 'duplicate_accounts', shifts: [] })).toBe('needs_identification')
     // a replacement can give shifts to an account whose name is not linked
-    expect(myShiftsState({ linked: false, link_kind: null, blocked_reason: null, held_back: 0, shifts: [s({ is_manually_edited: true })] })).toBe('shifts')
+    expect(myShiftsState({ linked: false, link_kind: null, blocked_reason: null, shifts: [s({ is_manually_edited: true })] })).toBe('shifts')
   })
 
   it('orders by date then start time', () => {

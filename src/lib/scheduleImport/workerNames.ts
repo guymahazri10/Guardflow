@@ -9,8 +9,7 @@ import type { ScheduleWorkerLink, SchedulePerson } from '../scheduleWorkerLinks'
  * - explicit:         the manager linked the name to an account
  * - marked_ambiguous: the manager decided "do not attribute this name"
  * - exact:            exactly one account carries this exact name (automatic)
- * - ambiguous:        needs a decision — two accounts carry the name, or the
- *                     name is on two rows that overlap in time (two people)
+ * - ambiguous:        needs a decision — two accounts carry the name
  * - unlinked:         no account found; may carry a fuzzy SUGGESTION, which is
  *                     never applied by itself
  */
@@ -24,30 +23,7 @@ export type ScheduleNameRow = {
   status: NameStatus
   userId: string | null
   suggestedUserId: string | null
-  reason: 'duplicate_accounts' | 'overlapping_rows' | null
-}
-
-/**
- * Rows of one name whose times overlap are a SIGN to check — the name may be
- * two people — never proof of identity either way. No business tolerance for
- * short overlaps has been approved, so any overlap counts (rows that merely
- * touch, one ending exactly when the next starts, do not). This only decides
- * whether the name is flagged for the manager and held out of automatic
- * "My shifts" attribution; it does not touch publishing rules.
- * Keep in step with public.get_my_shifts.
- */
-function hasOverlap(rows: SchedulePerson[]): boolean {
-  const live = rows.filter((r) => !r.is_manually_edited)
-  for (let i = 0; i < live.length; i++) {
-    for (let j = i + 1; j < live.length; j++) {
-      const a = live[i]
-      const b = live[j]
-      const start = Math.max(Date.parse(a.starts_at), Date.parse(b.starts_at))
-      const end = Math.min(Date.parse(a.ends_at), Date.parse(b.ends_at))
-      if (end > start) return true
-    }
-  }
-  return false
+  reason: 'duplicate_accounts' | null
 }
 
 export function classifyScheduleNames(
@@ -95,8 +71,9 @@ export function classifyScheduleNames(
       continue
     }
     if (owners.length === 1) {
-      if (hasOverlap(rows)) out.push({ ...base, status: 'ambiguous', userId: null, reason: 'overlapping_rows' })
-      else out.push({ ...base, status: 'exact', userId: owners[0], reason: null })
+      // Overlapping times do not matter for identification: they are a
+      // schedule matter, shown to the worker as a warning.
+      out.push({ ...base, status: 'exact', userId: owners[0], reason: null })
       continue
     }
 
@@ -108,7 +85,7 @@ export function classifyScheduleNames(
       status: 'unlinked',
       userId: null,
       suggestedUserId: m?.suggested_user_id ?? null,
-      reason: hasOverlap(rows) ? 'overlapping_rows' : null,
+      reason: null,
     })
   }
 

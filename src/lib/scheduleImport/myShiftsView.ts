@@ -6,8 +6,9 @@ import type { MyShift, MyShiftsResult } from '../scheduleWorkerLinks'
 export type MyShiftsState = 'shifts' | 'no_shifts' | 'not_linked' | 'needs_identification'
 
 /** 'needs_identification': the name in the schedule is shared by several
- *  people (or its rows overlap), so personal shifts need extra identification
- *  from the manager. The whole schedule stays in "All schedule". */
+ *  people (or two accounts carry it), so personal shifts need extra
+ *  identification from the manager. The whole schedule stays in "All schedule".
+ *  Overlapping times never land here: those shifts are shown with a warning. */
 export function myShiftsState(result: MyShiftsResult): MyShiftsState {
   if (result.shifts.length > 0) return 'shifts'
   if (result.blocked_reason) return 'needs_identification'
