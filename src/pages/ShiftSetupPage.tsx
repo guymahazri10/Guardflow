@@ -108,7 +108,9 @@ export function ShiftSetupPage() {
   const assignmentsQuery = useShiftAssignmentsForWeek(
     scheduleImportFlag.enabled ? weekStartIsoFor(nowRef.current) : '',
   )
-  const { slots: cancelledSlots } = useCancelledSlots(scheduleImportFlag.enabled ? weekStartIsoFor(nowRef.current) : '')
+  // same week the assignments above load (read once, outside of render-time ref access)
+  const [cancelledWeekStart] = useState(() => weekStartIsoFor(new Date()))
+  const { slots: cancelledSlots } = useCancelledSlots(scheduleImportFlag.enabled ? cancelledWeekStart : '')
   const datedBySlot = useMemo(
     () =>
       board && scheduleImportFlag.enabled
