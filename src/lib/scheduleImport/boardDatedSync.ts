@@ -88,26 +88,28 @@ export function findDatedForSlot(
   return undefined
 }
 
-/** A shift a manager CANCELLED by hand (kept as a marker: published = false,
- *  edited by hand) that sits on one of a slot's targets, when no live shift does.
- *  The slot must then show as empty — never fall back to the name written in the
- *  board template (roster_boards.guard_names), which is stale by definition. */
+/** What every role is told about a cancelled shift (see get_cancelled_slots). */
+export type CancelledSlotRef = { work_date: string; shift_category: string; position: string; slot_index: number }
+
+/** A cancelled shift on one of a slot's targets, when no live shift is there. The slot
+ *  must then show as empty — never fall back to the name written in the board template
+ *  (roster_boards.guard_names), which is stale by definition. Works from the minimal
+ *  cancelled-slot list, because a non-manager cannot read the cancelled row itself. */
 export function findCancelledForSlot(
-  assignments: ShiftAssignment[],
+  cancelled: CancelledSlotRef[],
+  liveAssignments: ShiftAssignment[],
   targets: ImportSlotTarget[],
   workDate: string,
   category: string,
-): ShiftAssignment | undefined {
-  if (findDatedForSlot(assignments, targets, workDate, category)) return undefined
+): CancelledSlotRef | undefined {
+  if (findDatedForSlot(liveAssignments, targets, workDate, category)) return undefined
   for (const target of targets) {
-    const match = assignments.find(
-      (a) =>
-        a.work_date === workDate &&
-        a.shift_category === category &&
-        a.position === target.position &&
-        (target.slotIndex === undefined || a.slot_index === target.slotIndex) &&
-        !a.published &&
-        a.is_manually_edited,
+    const match = cancelled.find(
+      (c) =>
+        c.work_date === workDate &&
+        c.shift_category === category &&
+        c.position === target.position &&
+        (target.slotIndex === undefined || c.slot_index === target.slotIndex),
     )
     if (match) return match
   }
@@ -116,15 +118,16 @@ export function findCancelledForSlot(
 
 /** Board slots whose dated shift is cancelled (see findCancelledForSlot). */
 export function indexCancelledBySlot(
-  assignments: ShiftAssignment[],
+  cancelled: CancelledSlotRef[],
+  liveAssignments: ShiftAssignment[],
   cols: string[],
   shiftType: string,
   workDate: string,
-): Map<string, ShiftAssignment> {
-  const bySlot = new Map<string, ShiftAssignment>()
+): Map<string, CancelledSlotRef> {
+  const bySlot = new Map<string, CancelledSlotRef>()
   const guardCount = guardCountFromCols(cols)
   for (const role of cols) {
-    const match = findCancelledForSlot(assignments, getImportSlotTargets(shiftType, role, guardCount), workDate, shiftType)
+    const match = findCancelledForSlot(cancelled, liveAssignments, getImportSlotTargets(shiftType, role, guardCount), workDate, shiftType)
     if (match) bySlot.set(role, match)
   }
   return bySlot

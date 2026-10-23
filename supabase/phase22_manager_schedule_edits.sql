@@ -76,6 +76,88 @@ $$;
 
 revoke all on function public.assignment_snapshot(public.shift_assignments) from public, anon, authenticated;
 
+
+-- ---------------------------------------------------------------------------
+-- What a NON-manager screen may know about cancellations.
+--
+-- A cancelled shift stays in shift_assignments as an unpublished marker, and RLS
+-- (correctly) hides unpublished rows from everyone but a manager. But Live and
+-- Setup fall back to the name written in the board template when no shift is
+-- found for a slot, so an אחמ"ש or a guard — who cannot see the marker — would
+-- see the OLD template name come back. They need to know ONE thing: "this slot
+-- is cancelled". get_cancelled_slots returns exactly that and nothing else —
+-- date, shift, post, slot — no name, no hours, no ids, no draft or other
+-- unpublished rows. (The general read of unpublished rows stays manager-only.)
+--
+-- Realtime cannot tell such a screen that a row it could see just became hidden
+-- (an UPDATE to an invisible row is not delivered), so every edit also bumps the
+-- single row of schedule_revisions, which any signed-in user may read and which
+-- Realtime does deliver: open screens refetch on it.
+
+create table if not exists public.schedule_revisions (
+  id boolean primary key default true check (id),
+  revision bigint not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.schedule_revisions (id) values (true) on conflict (id) do nothing;
+
+alter table public.schedule_revisions enable row level security;
+
+drop policy if exists "schedule_revisions select authenticated" on public.schedule_revisions;
+create policy "schedule_revisions select authenticated"
+  on public.schedule_revisions for select
+  to authenticated
+  using (true);
+
+revoke all on public.schedule_revisions from anon, authenticated;
+grant select on public.schedule_revisions to authenticated;
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'schedule_revisions') then
+    alter publication supabase_realtime add table public.schedule_revisions;
+  end if;
+end $$;
+
+create or replace function public.bump_schedule_revision()
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.schedule_revisions set revision = revision + 1, updated_at = clock_timestamp() where id;
+$$;
+
+revoke all on function public.bump_schedule_revision() from public, anon, authenticated;
+
+create or replace function public.get_cancelled_slots(p_week_start date)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in' using errcode = '42501';
+  end if;
+  if p_week_start is null then
+    raise exception 'Week start required';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'work_date', a.work_date, 'shift_category', a.shift_category, 'position', a.position, 'slot_index', a.slot_index))
+    from public.shift_assignments a
+    where not a.published and a.is_manually_edited
+      and a.work_date between p_week_start - 1 and p_week_start + 6
+  ), '[]'::jsonb);
+end;
+$$;
+
+revoke execute on function public.get_cancelled_slots(date) from public, anon;
+grant execute on function public.get_cancelled_slots(date) to authenticated;
+
 -- ---------------------------------------------------------------------------
 -- shared validation of a (category, post, slot, hours) combination
 
@@ -230,6 +312,7 @@ begin
     insert into public.staffing_change_log (assignment_id, from_user_id, from_name, to_user_id, to_name, reason, change_kind, changed_by, changed_at, details)
     values (old_row.id, old_row.actual_user_id, old_row.actual_name, result.actual_user_id, result.actual_name, p_reason, 'manual_edit', auth.uid(), clock_timestamp(),
             jsonb_build_object('before', public.assignment_snapshot(old_row), 'after', public.assignment_snapshot(result)));
+    perform public.bump_schedule_revision();
     return result;
   end if;
 
@@ -277,6 +360,7 @@ begin
      jsonb_build_object('change_group', grp, 'moved_from_id', p_assignment_id,
                         'before', public.assignment_snapshot(old_row) || jsonb_build_object('cancelled', false),
                         'after', public.assignment_snapshot(result)));
+  perform public.bump_schedule_revision();
   return result;
 end;
 $$;
@@ -345,6 +429,7 @@ begin
   insert into public.staffing_change_log (assignment_id, from_user_id, from_name, to_user_id, to_name, reason, change_kind, changed_by, changed_at, details)
   values (result.id, existing.actual_user_id, existing.actual_name, result.actual_user_id, result.actual_name, p_reason, 'manual_add', auth.uid(), clock_timestamp(),
           jsonb_build_object('before', before_snap, 'after', public.assignment_snapshot(result), 'reused_cancelled_marker', existing.id is not null));
+  perform public.bump_schedule_revision();
   return result;
 end;
 $$;
@@ -380,6 +465,7 @@ begin
   insert into public.staffing_change_log (assignment_id, from_user_id, from_name, to_user_id, to_name, reason, change_kind, changed_by, changed_at, details)
   values (old_row.id, old_row.actual_user_id, old_row.actual_name, null, null, p_reason, 'manual_cancel', auth.uid(), clock_timestamp(),
           jsonb_build_object('before', public.assignment_snapshot(old_row), 'after', public.assignment_snapshot(result)));
+  perform public.bump_schedule_revision();
   return result;
 end;
 $$;
@@ -425,6 +511,7 @@ begin
   insert into public.staffing_change_log (assignment_id, from_user_id, from_name, to_user_id, to_name, reason, change_kind, changed_by, changed_at, details)
   values (old_row.id, null, null, result.actual_user_id, result.actual_name, p_reason, 'manual_restore', auth.uid(), clock_timestamp(),
           jsonb_build_object('before', public.assignment_snapshot(old_row), 'after', public.assignment_snapshot(result)));
+  perform public.bump_schedule_revision();
   return result;
 end;
 $$;
@@ -504,6 +591,7 @@ begin
     jsonb_build_object('before', public.assignment_snapshot(old_row), 'after', public.assignment_snapshot(result))
   );
 
+  perform public.bump_schedule_revision();
   return result;
 end;
 $$;

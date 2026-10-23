@@ -563,4 +563,64 @@ begin
   raise notice 'E12 PASSED';
 end $$;
 
+-- ===========================================================================
+-- E13: non-managers learn ONLY "this slot is cancelled" (no names / hours / ids, no draft
+--      rows), cannot read unpublished rows, and open screens get a realtime signal
+-- ===========================================================================
+do $$
+declare
+  manager uuid := '00000000-0000-0000-0000-000000000001';
+  commander uuid := '00000000-0000-0000-0000-000000000002';
+  guard uuid := '00000000-0000-0000-0000-000000000003';
+  w date := date '2032-02-01';
+  r public.shift_assignments; slots jsonb; who uuid; rev0 bigint; rev1 bigint; n int;
+begin
+  insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, actual_name, source, published) values
+    (w, 'morning', 'מאבטח', 'AB', 0, (w||' 06:45+02')::timestamptz, (w||' 15:10+02')::timestamptz, 'שם סודי א', 'שם סודי א', 'excel', true),
+    (w, 'morning', 'מאבטח', 'CD', 0, (w||' 06:45+02')::timestamptz, (w||' 15:10+02')::timestamptz, 'טיוטה שלא פורסמה', 'טיוטה שלא פורסמה', 'excel', false);
+  update public.shift_assignments set updated_at = updated_at - interval '1 minute' where work_date = w;
+  r := pg_temp.row_at(w, 'morning', 'AB', 0);
+  select revision into rev0 from public.schedule_revisions;
+
+  perform pg_temp.as_user(manager);
+  perform public.cancel_shift_assignment(r.id, r.updated_at, null);
+  reset role;
+  select revision into rev1 from public.schedule_revisions;
+  assert rev1 > rev0, 'E13 FAILED: a cancel must bump the revision signal';
+
+  foreach who in array array[commander, guard] loop
+    perform pg_temp.as_user(who);
+    select count(*) into n from public.shift_assignments where work_date = w and not published;
+    assert n = 0, 'E13 FAILED: a non-manager can read unpublished rows';
+    slots := public.get_cancelled_slots(w);
+    assert jsonb_array_length(slots) = 1, 'E13 FAILED: expected exactly the one cancelled slot (the unedited draft must not be listed), got '||slots::text;
+    assert (select array_agg(k order by k) from jsonb_object_keys(slots->0) k) = array['position','shift_category','slot_index','work_date'],
+           'E13 FAILED: only date/shift/post/slot may be exposed, got '||(slots->0)::text;
+    assert slots::text not like '%שם סודי%' and slots::text not like '%טיוטה%', 'E13 FAILED: a name leaked';
+    -- the signal is readable, but nobody but the RPCs can write it
+    select revision into rev0 from public.schedule_revisions; assert rev0 = rev1, 'E13 FAILED: signal not readable';
+    begin update public.schedule_revisions set revision = 0; get diagnostics n = row_count; assert n = 0, 'E13 FAILED: direct write to the signal changed a row';
+    exception when insufficient_privilege then null; end;
+    reset role;
+  end loop;
+
+  -- anon cannot call it
+  perform set_config('request.jwt.claims', '{}', true);
+  set local role anon;
+  begin perform public.get_cancelled_slots(w); assert false, 'E13 FAILED: anon read cancelled slots';
+  exception when insufficient_privilege then null; end;
+  reset role;
+
+  -- restore removes it from the list and bumps again
+  r := pg_temp.row_at(w, 'morning', 'AB', 0);
+  perform pg_temp.as_user(manager);
+  perform public.restore_shift_assignment(r.id, r.updated_at, null);
+  reset role;
+  perform pg_temp.as_user(guard);
+  assert jsonb_array_length(public.get_cancelled_slots(w)) = 0, 'E13 FAILED: restored shift still listed as cancelled';
+  reset role;
+  assert (select revision from public.schedule_revisions) > rev1, 'E13 FAILED: restore must bump the signal';
+  raise notice 'E13 PASSED';
+end $$;
+
 rollback;

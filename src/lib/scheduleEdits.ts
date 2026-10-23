@@ -94,3 +94,17 @@ export async function fetchAssignmentHistory(assignmentId: string): Promise<Assi
   if (error) throw mapEditError(error)
   return (data ?? []) as AssignmentHistoryEntry[]
 }
+
+/** The only thing a non-manager screen learns about a cancelled shift. */
+export type CancelledSlot = {
+  work_date: string
+  shift_category: 'morning' | 'afternoon' | 'night'
+  position: string
+  slot_index: number
+}
+
+export async function fetchCancelledSlots(weekStart: string): Promise<CancelledSlot[]> {
+  const { data, error } = await supabase.rpc('get_cancelled_slots', { p_week_start: weekStart })
+  if (error) throw mapEditError(error)
+  return (data ?? []) as CancelledSlot[]
+}

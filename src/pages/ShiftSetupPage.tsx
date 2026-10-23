@@ -25,11 +25,13 @@ import GuardNameInput from '../components/ui/GuardNameInput'
 import { ClipboardIcon } from '../components/ui/StateIcon'
 import { callReplaceAssignmentWorker, type ShiftAssignment } from '../lib/scheduleImports'
 import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
+import { useCancelledSlots } from '../hooks/useCancelledSlots'
 import {
   workDateForCategory,
   weekStartIsoFor,
   indexDatedBySlot,
   indexCancelledBySlot,
+  type CancelledSlotRef,
   keepTemplateNamesForSlots,
   lockedSlotsForSetup,
   effectiveAssignmentName,
@@ -106,6 +108,7 @@ export function ShiftSetupPage() {
   const assignmentsQuery = useShiftAssignmentsForWeek(
     scheduleImportFlag.enabled ? weekStartIsoFor(nowRef.current) : '',
   )
+  const { slots: cancelledSlots } = useCancelledSlots(scheduleImportFlag.enabled ? weekStartIsoFor(nowRef.current) : '')
   const datedBySlot = useMemo(
     () =>
       board && scheduleImportFlag.enabled
@@ -120,9 +123,9 @@ export function ShiftSetupPage() {
   const cancelledBySlot = useMemo(
     () =>
       board && scheduleImportFlag.enabled
-        ? indexCancelledBySlot(assignmentsQuery.data ?? [], board.cols ?? [], board.shift_type, workDate)
-        : new Map<string, ShiftAssignment>(),
-    [board, assignmentsQuery.data, scheduleImportFlag.enabled, workDate],
+        ? indexCancelledBySlot(cancelledSlots, assignmentsQuery.data ?? [], board.cols ?? [], board.shift_type, workDate)
+        : new Map<string, CancelledSlotRef>(),
+    [board, cancelledSlots, assignmentsQuery.data, scheduleImportFlag.enabled, workDate],
   )
 
   // An אחמ"ש cannot change imported assignments from here (only a מנהל can);

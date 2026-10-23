@@ -5,6 +5,8 @@ import {
   indexDatedBySlot,
   lockedSlotsForSetup,
   findCancelledForSlot,
+  indexCancelledBySlot,
+  type CancelledSlotRef,
   findDatedForSlot,
   keepTemplateNamesForSlots,
   effectiveAssignmentName,
@@ -183,13 +185,25 @@ describe('cancelled shifts (marker rows: published = false, edited by hand)', ()
     assignment({ id: 'c1', published: false, is_manually_edited: true, position: 'לובי עליון', work_date: '2026-09-02', shift_category: 'night', ...over })
   const targets = [{ position: 'לובי עליון' }]
 
-  it('a cancelled shift is found only when no live shift is on the slot', () => {
-    expect(findCancelledForSlot([cancelled()], targets, '2026-09-02', 'night')?.id).toBe('c1')
-    expect(findCancelledForSlot([cancelled(), assignment()], targets, '2026-09-02', 'night')).toBeUndefined()
+  const slotRef = (over: Partial<CancelledSlotRef> = {}): CancelledSlotRef => ({
+    work_date: '2026-09-02', shift_category: 'night', position: 'לובי עליון', slot_index: 0, ...over,
   })
 
-  it('an unpublished draft that was never edited by hand is not treated as cancelled', () => {
-    expect(findCancelledForSlot([cancelled({ is_manually_edited: false })], targets, '2026-09-02', 'night')).toBeUndefined()
+  it('a cancelled slot is found only when no live shift is on the slot', () => {
+    expect(findCancelledForSlot([slotRef()], [], targets, '2026-09-02', 'night')).toBeDefined()
+    expect(findCancelledForSlot([slotRef()], [assignment()], targets, '2026-09-02', 'night')).toBeUndefined()
+  })
+
+  it('works from the minimal cancelled-slot list alone, as for a guard who cannot read the cancelled row', () => {
+    // no assignment row at all (RLS hides it) — only the slot reference
+    expect(findCancelledForSlot([slotRef()], [], targets, '2026-09-02', 'night')).toEqual(slotRef())
+    expect(findCancelledForSlot([slotRef({ shift_category: 'morning' })], [], targets, '2026-09-02', 'night')).toBeUndefined()
+    expect(findCancelledForSlot([slotRef({ work_date: '2026-09-03' })], [], targets, '2026-09-02', 'night')).toBeUndefined()
+  })
+
+  it('indexes the cancelled slots of a board by its own labels', () => {
+    const idx = indexCancelledBySlot([slotRef()], [], ['מאבטח 1'], 'night_6', '2026-09-02')
+    expect(idx instanceof Map).toBe(true)
   })
 
   it('the live lookup ignores a cancelled shift, so it never shows its name', () => {

@@ -8,12 +8,13 @@ import { getShiftProgress } from '../lib/shiftProgress'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, type ShiftCategory } from '../constants/shifts'
 import { toLocalDateIso, formatIsraelDateLabel } from '../lib/israelTime'
-import { workDateForCategory, weekStartIsoFor, findDatedForSlot, findCancelledForSlot } from '../lib/scheduleImport/boardDatedSync'
+import { workDateForCategory, weekStartIsoFor, findDatedForSlot, findCancelledForSlot, type CancelledSlotRef } from '../lib/scheduleImport/boardDatedSync'
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
 import { useFeatureFlag } from '../hooks/useFeatureFlag'
 import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
+import { useCancelledSlots } from '../hooks/useCancelledSlots'
 import { useAuth } from '../contexts/AuthContext'
 import { AssignmentSwapModal } from '../components/AssignmentSwapModal'
 import { getImportSlotTargets, guardCountFromCols, type ImportSlotTarget } from '../lib/scheduleImport/liveBoardPositions'
@@ -23,6 +24,8 @@ import { getImportSlotTargets, guardCountFromCols, type ImportSlotTarget } from 
 type DatedAssignmentContext = {
   scheduleImportEnabled: boolean
   assignmentsQuery: ReturnType<typeof useShiftAssignmentsForWeek>
+  /** Cancelled slots of the week, for every role (a non-manager cannot read the cancelled rows). */
+  cancelledSlots: CancelledSlotRef[]
   // The work_date to match the active assignment against — NOT necessarily
   // calendar-today. A night shift's work_date is the date it *started* (see
   // normalizeSchedule.ts), even though it's still active into the next
@@ -79,6 +82,7 @@ export function ShiftLivePage() {
   const lookupWorkDate = workDateForCategory(category, now)
   const weekStartIso = weekStartIsoFor(now)
   const assignmentsQuery = useShiftAssignmentsForWeek(scheduleImportFlag.enabled ? weekStartIso : '')
+  const { slots: cancelledSlots } = useCancelledSlots(scheduleImportFlag.enabled ? weekStartIso : '')
   const { isAdmin, isCommander } = useAuth()
   const canSwap = isAdmin || isCommander
   const [swapTarget, setSwapTarget] = useState<{ id: string; updatedAt: string } | null>(null)
@@ -95,6 +99,7 @@ export function ShiftLivePage() {
   const datedCtx: DatedAssignmentContext = {
     scheduleImportEnabled: scheduleImportFlag.enabled,
     assignmentsQuery,
+    cancelledSlots,
     lookupWorkDate,
     category,
     canSwap,
@@ -303,6 +308,7 @@ function datedOrLegacyName({
   targets,
   scheduleImportEnabled,
   assignmentsQuery,
+  cancelledSlots,
   lookupWorkDate,
   category,
   canSwap,
@@ -323,7 +329,7 @@ function datedOrLegacyName({
   if (!dated) {
     // A shift cancelled in the weekly schedule shows as not set — not the
     // (older) name from the board template.
-    return findCancelledForSlot(assignmentsQuery.data ?? [], targets, lookupWorkDate, category) ? null : legacyName
+    return findCancelledForSlot(cancelledSlots, assignmentsQuery.data ?? [], targets, lookupWorkDate, category) ? null : legacyName
   }
 
   // Just the name of whoever is actually on shift — a manual swap wins over

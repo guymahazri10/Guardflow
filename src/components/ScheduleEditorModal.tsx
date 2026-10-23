@@ -143,6 +143,7 @@ export function ScheduleEditorModal({
       await queryClient.invalidateQueries({ queryKey: ['shift-assignments'] })
       await queryClient.invalidateQueries({ queryKey: ['my-shifts'] })
       await queryClient.invalidateQueries({ queryKey: ['assignment-history'] })
+      await queryClient.invalidateQueries({ queryKey: ['cancelled-slots'] })
       onSaved()
     } catch (e) {
       const err = e instanceof ScheduleEditError ? e : null
