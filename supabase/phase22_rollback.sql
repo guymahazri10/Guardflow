@@ -49,4 +49,5 @@ drop function if exists public.bump_schedule_revision();
 drop function if exists public.require_edit_reason(date, text);
 drop function if exists public.validate_shift_fields(date, text, text, text, int, timestamptz, timestamptz);
 drop table if exists public.schedule_revisions;
--- kept on purpose: assignment_snapshot, shift_worker_replaced, get_my_shifts, staffing_change_log.details
+-- kept on purpose: assignment_snapshot, shift_worker_replaced, get_my_shifts, staffing_change_log.details,
+-- shift_assignments.worker_set_by_manager (get_my_shifts reads it)
