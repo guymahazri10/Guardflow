@@ -309,4 +309,38 @@ begin
   raise notice 'M6 PASSED';
 end $$;
 
+-- ===========================================================================
+-- M7: a confirmed link needs no action per upload: it applies to later weeks and
+--     to brand-new uploads of the same name, and survives a re-upload
+-- ===========================================================================
+do $$
+declare
+  manager uuid := '00000000-0000-0000-0000-000000000001';
+  commander uuid := '00000000-0000-0000-0000-000000000002';
+  w1 date := date '2031-03-02';
+  w2 date := date '2031-03-09';
+  w3 date := date '2031-03-16';
+  v_import uuid; r jsonb; pub jsonb;
+begin
+  perform pg_temp.as_user(manager);
+  -- one-time link of a spelling that matches no account name
+  perform public.link_schedule_worker('שם בקובץ בלבד', commander);
+  reset role;
+  foreach w1 in array array[date '2031-03-02', date '2031-03-09', date '2031-03-16'] loop
+    perform pg_temp.as_user(manager);
+    insert into public.schedule_imports (week_start, source_kind, storage_path, original_filename, content_hash, created_by)
+    values (w1, 'excel', 'test/m7', 'm7.xlsx', 'm7'||w1, manager) returning id into v_import;
+    -- a fresh upload of a new week: no manager step, planned_user_id null as the client sends it without a link
+    pub := public.publish_schedule_import(p_import_id => v_import, p_assignments => jsonb_build_array(jsonb_build_object(
+        'work_date', w1, 'shift_category','morning','worker_kind','מאבטח','position','AB','slot_index',0,
+        'starts_at',(w1||' 06:45+02')::timestamptz,'ends_at',(w1||' 15:10+02')::timestamptz,'source_name','שם בקובץ בלבד','planned_user_id',null)),
+      p_resolutions => '{}'::jsonb, p_confirmed_delete_ids => '{}'::uuid[], p_dry_run => false);
+    reset role;
+    r := pg_temp.mine(commander, w1);
+    assert (r->>'linked')::boolean and jsonb_array_length(r->'shifts') = 1, 'M7 FAILED: link did not apply to the new week '||w1||': '||r::text;
+  end loop;
+  assert (select count(*) from public.schedule_worker_links where source_key = 'שם בקובץ בלבד') = 1, 'M7 FAILED: link row changed';
+  raise notice 'M7 PASSED';
+end $$;
+
 rollback;
