@@ -486,4 +486,81 @@ begin
   raise notice 'E11 PASSED';
 end $$;
 
+-- ===========================================================================
+-- E12: the replace mechanism (Live swap / Setup) refuses a stale screen, cannot touch a
+--      cancelled shift, keeps its old rules, and the old 4-parameter call still works
+-- ===========================================================================
+do $$
+declare
+  manager uuid := '00000000-0000-0000-0000-000000000001';
+  commander uuid := '00000000-0000-0000-0000-000000000002';
+  guard uuid := '00000000-0000-0000-0000-000000000003';
+  w date := pg_temp.W();
+  seen public.shift_assignments; r public.shift_assignments; n int := 0; other public.shift_assignments;
+begin
+  -- a shift that is "in progress right now" for the commander rule
+  insert into public.shift_assignments (work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at, source_name, actual_name, source, published)
+  values (((now() - interval '1 hour') at time zone 'Asia/Jerusalem')::date, 'morning', 'מאבטח', 'עמדת בדיקה E12', 0, now() - interval '1 hour', now() + interval '1 hour', 'פעיל', 'פעיל', 'excel', true);
+  update public.shift_assignments set updated_at = updated_at - interval '1 minute' where position = 'עמדת בדיקה E12';
+  seen := pg_temp.row_at(((now() - interval '1 hour') at time zone 'Asia/Jerusalem')::date, 'morning', 'עמדת בדיקה E12', 0);
+
+  -- somebody else edits it first (manager screen)
+  perform pg_temp.as_user(manager);
+  perform public.edit_shift_assignment(seen.id, seen.updated_at, jsonb_build_object('ends_at', seen.ends_at + interval '30 minutes'), 'x');
+  reset role;
+
+  -- the commander's Live screen is now stale: refused, nothing overwritten
+  perform pg_temp.as_user(commander);
+  begin perform public.replace_assignment_worker(seen.id, guard, 'אורי כהן', 'late', seen.updated_at); assert false, 'E12 FAILED: stale replace overwrote a change';
+  exception when sqlstate '40001' then n := n + 1; end;
+  begin perform public.replace_assignment_worker(seen.id, guard, 'אורי כהן', 'late', null); assert false, 'E12 FAILED: replace without expected_updated_at';
+  exception when sqlstate '40001' then n := n + 1; end;
+  reset role;
+  assert (select actual_name from public.shift_assignments where id = seen.id) = 'פעיל', 'E12 FAILED: a refused replace changed the worker';
+
+  -- with a fresh view it works (commander, in-progress shift), history has before/after
+  seen := pg_temp.row_at(((now() - interval '1 hour') at time zone 'Asia/Jerusalem')::date, 'morning', 'עמדת בדיקה E12', 0);
+  perform pg_temp.as_user(commander);
+  r := public.replace_assignment_worker(seen.id, guard, 'אורי כהן', 'swap', seen.updated_at);
+  reset role;
+  assert r.actual_user_id = guard and r.is_manually_edited, 'E12 FAILED: fresh replace should work';
+  assert (select details->'before'->>'actual_name' from public.staffing_change_log where assignment_id = seen.id and change_kind = 'manual_replace' order by changed_at desc limit 1) = 'פעיל', 'E12 FAILED: replace history lacks before';
+
+  -- the manager editing from a stale screen after THAT replacement is refused too
+  perform pg_temp.as_user(manager);
+  begin perform public.edit_shift_assignment(seen.id, seen.updated_at, jsonb_build_object('ends_at', seen.ends_at + interval '10 minutes'), 'x'); assert false, 'E12 FAILED: stale manager edit after a replace';
+  exception when sqlstate '40001' then n := n + 1; end;
+  reset role;
+
+  -- a cancelled shift cannot be replaced; a guard cannot; the commander rule for a non-active shift stays
+  seen := pg_temp.row_at(w+4, 'afternoon', 'EFG', 0);
+  perform pg_temp.as_user(manager);
+  perform public.cancel_shift_assignment(seen.id, seen.updated_at, null);
+  reset role;
+  seen := pg_temp.row_at(w+4, 'afternoon', 'EFG', 0);
+  perform pg_temp.as_user(manager);
+  begin perform public.replace_assignment_worker(seen.id, guard, 'x', 'r', seen.updated_at); assert false, 'E12 FAILED: replaced a cancelled shift';
+  exception when sqlstate '22023' then n := n + 1; end;
+  reset role;
+  perform pg_temp.as_user(guard);
+  begin perform public.replace_assignment_worker(seen.id, guard, 'x', 'r', seen.updated_at); assert false, 'E12 FAILED: guard replaced';
+  exception when insufficient_privilege then n := n + 1; end;
+  reset role;
+  perform pg_temp.as_user(commander);
+  other := pg_temp.row_at(w+1, 'morning', 'AB', 0);
+  begin perform public.replace_assignment_worker(other.id, guard, 'x', 'r', other.updated_at); assert false, 'E12 FAILED: commander replaced a shift that is not in progress';
+  exception when insufficient_privilege then n := n + 1; end;
+  reset role;
+  assert n = 6, 'E12 FAILED: expected 6 refusals, got '||n;
+
+  -- the OLD four-parameter call (what the currently deployed client sends) still resolves and works
+  perform pg_temp.as_user(manager);
+  seen := pg_temp.row_at(w+3, 'morning', 'CD', 0);
+  r := public.replace_assignment_worker(p_assignment_id => seen.id, p_new_user_id => commander, p_new_name => 'דנה לוי', p_reason => 'old client');
+  reset role;
+  assert r.actual_user_id = commander, 'E12 FAILED: the old 4-parameter replace stopped working';
+  assert (select count(*) from pg_proc where proname = 'replace_assignment_worker' and pronamespace = 'public'::regnamespace) = 2, 'E12 FAILED: expected both replace overloads';
+  raise notice 'E12 PASSED';
+end $$;
+
 rollback;

@@ -4,6 +4,9 @@ import {
   weekStartIsoFor,
   indexDatedBySlot,
   lockedSlotsForSetup,
+  findCancelledForSlot,
+  findDatedForSlot,
+  keepTemplateNamesForSlots,
   effectiveAssignmentName,
   effectiveAssignmentUserId,
 } from './boardDatedSync'
@@ -172,5 +175,37 @@ describe('lockedSlotsForSetup', () => {
   })
   it('locks nothing when no slot has an imported assignment, so the legacy flow still works', () => {
     expect(lockedSlotsForSetup({ isAdmin: false, isCommander: true, importEnabled: true, datedBySlot: new Map() }).size).toBe(0)
+  })
+})
+
+describe('cancelled shifts (marker rows: published = false, edited by hand)', () => {
+  const cancelled = (over: Partial<ShiftAssignment> = {}) =>
+    assignment({ id: 'c1', published: false, is_manually_edited: true, position: 'לובי עליון', work_date: '2026-09-02', shift_category: 'night', ...over })
+  const targets = [{ position: 'לובי עליון' }]
+
+  it('a cancelled shift is found only when no live shift is on the slot', () => {
+    expect(findCancelledForSlot([cancelled()], targets, '2026-09-02', 'night')?.id).toBe('c1')
+    expect(findCancelledForSlot([cancelled(), assignment()], targets, '2026-09-02', 'night')).toBeUndefined()
+  })
+
+  it('an unpublished draft that was never edited by hand is not treated as cancelled', () => {
+    expect(findCancelledForSlot([cancelled({ is_manually_edited: false })], targets, '2026-09-02', 'night')).toBeUndefined()
+  })
+
+  it('the live lookup ignores a cancelled shift, so it never shows its name', () => {
+    expect(findDatedForSlot([cancelled()], targets, '2026-09-02', 'night')).toBeUndefined()
+  })
+
+  it('locks cancelled slots for everyone, imported slots only for a commander', () => {
+    const dated = new Map([['א', 1]])
+    const cancelledMap = new Map([['ב', 1]])
+    expect([...lockedSlotsForSetup({ isAdmin: true, isCommander: false, importEnabled: true, datedBySlot: dated, cancelledBySlot: cancelledMap })]).toEqual(['ב'])
+    expect([...lockedSlotsForSetup({ isAdmin: false, isCommander: true, importEnabled: true, datedBySlot: dated, cancelledBySlot: cancelledMap })].sort()).toEqual(['א', 'ב'])
+    expect(lockedSlotsForSetup({ isAdmin: true, isCommander: false, importEnabled: false, datedBySlot: dated, cancelledBySlot: cancelledMap }).size).toBe(0)
+  })
+
+  it('saving the board keeps the template name of a cancelled slot, whatever the screen shows', () => {
+    const saved = keepTemplateNamesForSlots({ 'מאבטח 1': '', 'מאבטח 2': 'חדש' }, { 'מאבטח 1': 'שם מהתבנית', 'מאבטח 2': 'ישן' }, ['מאבטח 1'])
+    expect(saved).toEqual({ 'מאבטח 1': 'שם מהתבנית', 'מאבטח 2': 'חדש' })
   })
 })

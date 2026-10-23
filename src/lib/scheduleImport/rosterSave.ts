@@ -1,6 +1,7 @@
 import type { GuardAssignment } from '../rosterBoards'
 import type { ShiftAssignment } from '../scheduleImports'
 import { effectiveAssignmentName } from './boardDatedSync'
+import { ScheduleEditError } from '../scheduleEdits'
 
 /**
  * The save flow behind ShiftSetupPage's "שמור ועבור לתצוגה", lifted out of the
@@ -45,6 +46,7 @@ export type SaveDeps = {
     newUserId: string | null
     newName: string
     reason: string
+    expectedUpdatedAt: string
   }) => Promise<unknown>
   /**
    * Drops the cached ['shift-assignments', weekStart] query so the live screen
@@ -70,6 +72,12 @@ export type SaveOutcome =
   | { status: 'publish-failed'; error: unknown }
   /** guard_names was written; some dated rows were not. Never reported as success. */
   | { status: 'dated-write-failed'; error: unknown }
+  /**
+   * A dated row was changed (or cancelled) by someone else after this screen
+   * loaded it, so that write was refused. guard_names was saved; the dated
+   * names were not overwritten. The caller reloads and asks the user to retry.
+   */
+  | { status: 'stale'; error: unknown }
   /**
    * guard_names was written, but dated rows this caller isn't allowed to touch
    * were left alone. Surfaced rather than silently dropped — the manager needs
@@ -127,6 +135,9 @@ export async function performRosterSave(input: {
         newUserId: edited.user_id,
         newName: edited.name,
         reason: 'עדכון ידני דרך מסך שיבוץ',
+        // the version of the row this screen displayed: a row someone else
+        // changed since is refused, never silently overwritten
+        expectedUpdatedAt: assignment.updated_at,
       })
     }
   } catch (error) {
@@ -134,6 +145,9 @@ export async function performRosterSave(input: {
     // save, not a rollback — saying so is more useful than a blanket success
     // toast the live screen would then contradict.
     await deps.invalidateAssignments()
+    if (error instanceof ScheduleEditError && (error.kind === 'concurrent' || error.kind === 'cancelled')) {
+      return { status: 'stale', error }
+    }
     return { status: 'dated-write-failed', error }
   }
 

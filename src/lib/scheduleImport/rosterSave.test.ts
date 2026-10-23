@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { planDatedWrites, performRosterSave, type SaveDeps } from './rosterSave'
 import type { GuardAssignment } from '../rosterBoards'
 import type { ShiftAssignment } from '../scheduleImports'
+import { ScheduleEditError } from '../scheduleEdits'
 
 function assignment(overrides: Partial<ShiftAssignment> = {}): ShiftAssignment {
   return {
@@ -165,6 +166,29 @@ describe('performRosterSave', () => {
 
     expect(outcome).toEqual({ status: 'dated-write-failed', error: rpcError })
     expect(deps.saveGuardNames).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes the version of the row it displayed, and reports a stale screen instead of overwriting', async () => {
+    const stale = new ScheduleEditError('concurrent', 'שונה בינתיים')
+    const { deps } = trackedDeps({
+      replaceAssignmentWorker: vi.fn(async () => {
+        throw stale
+      }),
+    })
+    const outcome = await performRosterSave({
+      boardId: 'b1',
+      guardNames: {},
+      datedWrites: planDatedWrites(new Map([['מאבטח 1', assignment({ updated_at: '2026-09-01T10:00:00Z' })]]), {
+        'מאבטח 1': named('דניאל שמש'),
+      }),
+      canWriteDated: true,
+      publishBoard: false,
+      deps,
+    })
+    expect(outcome).toEqual({ status: 'stale', error: stale })
+    expect(deps.replaceAssignmentWorker).toHaveBeenCalledWith(expect.objectContaining({ expectedUpdatedAt: '2026-09-01T10:00:00Z' }))
+    // the refused write still refreshes the screen so the user sees the newer data
+    expect(deps.invalidateAssignments).toHaveBeenCalled()
   })
 
   it('never reports success when dated writes were skipped for lack of permission', async () => {

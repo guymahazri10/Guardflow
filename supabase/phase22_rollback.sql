@@ -85,6 +85,7 @@ begin
 end;
 $$;
 
+drop function if exists public.replace_assignment_worker(uuid, uuid, text, text, timestamptz);
 drop function if exists public.restore_shift_assignment(uuid, timestamptz, text);
 drop function if exists public.cancel_shift_assignment(uuid, timestamptz, text);
 drop function if exists public.add_shift_assignment(jsonb, text);

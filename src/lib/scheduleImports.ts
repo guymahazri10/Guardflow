@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { mapEditError } from './scheduleEdits'
 import type { MatchedAssignment } from './scheduleImport/types'
 
 export type ScheduleImportRow = {
@@ -288,15 +289,22 @@ export async function callReplaceAssignmentWorker(input: {
   newUserId: string | null
   newName: string
   reason: string
+  /** The updated_at of the assignment as the caller's screen last saw it. If the
+   *  row changed since (another user, a manager's edit), the call is refused
+   *  with a ScheduleEditError of kind 'concurrent' instead of overwriting. */
+  expectedUpdatedAt: string
 }): Promise<ShiftAssignment> {
   const { data, error } = await supabase.rpc('replace_assignment_worker', {
     p_assignment_id: input.assignmentId,
     p_new_user_id: input.newUserId,
     p_new_name: input.newName,
     p_reason: input.reason,
+    p_expected_updated_at: input.expectedUpdatedAt,
   })
 
   if (error) {
+    const mapped = mapEditError(error)
+    if (mapped.kind === 'concurrent' || mapped.kind === 'cancelled') throw mapped
     throw new Error(getErrorMessage('Failed to replace assignment worker', error))
   }
 

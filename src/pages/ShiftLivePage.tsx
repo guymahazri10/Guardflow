@@ -8,7 +8,7 @@ import { getShiftProgress } from '../lib/shiftProgress'
 import { ClipboardIcon, AlertIcon, ClockIcon } from '../components/ui/StateIcon'
 import { SHIFT_CATEGORIES, getShiftFullTitle, getShiftHoursLabel, type ShiftCategory } from '../constants/shifts'
 import { toLocalDateIso, formatIsraelDateLabel } from '../lib/israelTime'
-import { workDateForCategory, weekStartIsoFor, findDatedForSlot } from '../lib/scheduleImport/boardDatedSync'
+import { workDateForCategory, weekStartIsoFor, findDatedForSlot, findCancelledForSlot } from '../lib/scheduleImport/boardDatedSync'
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
@@ -37,7 +37,7 @@ type DatedAssignmentContext = {
   // must be scoped to the board's own active category, not just date+position.
   category: ShiftCategory
   canSwap: boolean
-  onSwapClick: (assignmentId: string) => void
+  onSwapClick: (target: { id: string; updatedAt: string }) => void
 }
 
 type Tab = 'now' | 'all'
@@ -81,7 +81,7 @@ export function ShiftLivePage() {
   const assignmentsQuery = useShiftAssignmentsForWeek(scheduleImportFlag.enabled ? weekStartIso : '')
   const { isAdmin, isCommander } = useAuth()
   const canSwap = isAdmin || isCommander
-  const [swapAssignmentId, setSwapAssignmentId] = useState<string | null>(null)
+  const [swapTarget, setSwapTarget] = useState<{ id: string; updatedAt: string } | null>(null)
   const queryClient = useQueryClient()
   // Realtime (Task 14's postgres_changes subscription) is the primary refresh
   // path for other open sessions, but the acting user's own screen shouldn't
@@ -89,7 +89,7 @@ export function ShiftLivePage() {
   // invalidate the same query key directly on save. Must match the exact key
   // shape useShiftAssignmentsForWeek builds internally: ['shift-assignments', weekStart].
   function handleSwapSaved() {
-    setSwapAssignmentId(null)
+    setSwapTarget(null)
     queryClient.invalidateQueries({ queryKey: ['shift-assignments', weekStartIso] })
   }
   const datedCtx: DatedAssignmentContext = {
@@ -98,7 +98,7 @@ export function ShiftLivePage() {
     lookupWorkDate,
     category,
     canSwap,
-    onSwapClick: setSwapAssignmentId,
+    onSwapClick: setSwapTarget,
   }
 
   return (
@@ -156,11 +156,16 @@ export function ShiftLivePage() {
         )}
       </div>
 
-      {swapAssignmentId && (
+      {swapTarget && (
         <AssignmentSwapModal
-          assignmentId={swapAssignmentId}
-          onClose={() => setSwapAssignmentId(null)}
+          assignmentId={swapTarget.id}
+          expectedUpdatedAt={swapTarget.updatedAt}
+          onClose={() => setSwapTarget(null)}
           onSaved={handleSwapSaved}
+          onStale={() => {
+            setSwapTarget(null)
+            queryClient.invalidateQueries({ queryKey: ['shift-assignments', weekStartIso] })
+          }}
         />
       )}
     </div>
@@ -315,7 +320,11 @@ function datedOrLegacyName({
   // modal act on the wrong assignment id).
   const dated = findDatedForSlot(assignmentsQuery.data ?? [], targets, lookupWorkDate, category)
 
-  if (!dated) return legacyName
+  if (!dated) {
+    // A shift cancelled in the weekly schedule shows as not set — not the
+    // (older) name from the board template.
+    return findCancelledForSlot(assignmentsQuery.data ?? [], targets, lookupWorkDate, category) ? null : legacyName
+  }
 
   // Just the name of whoever is actually on shift — a manual swap wins over
   // the imported plan. No "תוכנן"/"בפועל" qualifier: GuardCard renders this
@@ -327,7 +336,7 @@ function datedOrLegacyName({
   if (!canSwap) return content
 
   return (
-    <button type="button" onClick={() => onSwapClick(dated.id)} className="text-right w-full">
+    <button type="button" onClick={() => onSwapClick({ id: dated.id, updatedAt: dated.updated_at })} className="text-right w-full">
       {content}
     </button>
   )

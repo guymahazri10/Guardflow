@@ -88,6 +88,63 @@ export function findDatedForSlot(
   return undefined
 }
 
+/** A shift a manager CANCELLED by hand (kept as a marker: published = false,
+ *  edited by hand) that sits on one of a slot's targets, when no live shift does.
+ *  The slot must then show as empty — never fall back to the name written in the
+ *  board template (roster_boards.guard_names), which is stale by definition. */
+export function findCancelledForSlot(
+  assignments: ShiftAssignment[],
+  targets: ImportSlotTarget[],
+  workDate: string,
+  category: string,
+): ShiftAssignment | undefined {
+  if (findDatedForSlot(assignments, targets, workDate, category)) return undefined
+  for (const target of targets) {
+    const match = assignments.find(
+      (a) =>
+        a.work_date === workDate &&
+        a.shift_category === category &&
+        a.position === target.position &&
+        (target.slotIndex === undefined || a.slot_index === target.slotIndex) &&
+        !a.published &&
+        a.is_manually_edited,
+    )
+    if (match) return match
+  }
+  return undefined
+}
+
+/** Board slots whose dated shift is cancelled (see findCancelledForSlot). */
+export function indexCancelledBySlot(
+  assignments: ShiftAssignment[],
+  cols: string[],
+  shiftType: string,
+  workDate: string,
+): Map<string, ShiftAssignment> {
+  const bySlot = new Map<string, ShiftAssignment>()
+  const guardCount = guardCountFromCols(cols)
+  for (const role of cols) {
+    const match = findCancelledForSlot(assignments, getImportSlotTargets(shiftType, role, guardCount), workDate, shiftType)
+    if (match) bySlot.set(role, match)
+  }
+  return bySlot
+}
+
+/** guard_names to save: a slot whose shift is cancelled keeps its template value
+ *  untouched (the template is not part of a dated cancellation). */
+export function keepTemplateNamesForSlots<T>(
+  guardNames: Record<string, T>,
+  template: Record<string, T> | null | undefined,
+  slots: Iterable<string>,
+): Record<string, T> {
+  const next = { ...guardNames }
+  for (const role of slots) {
+    if (template && role in template) next[role] = template[role]
+    else delete next[role]
+  }
+  return next
+}
+
 /** The name a dated assignment should display/seed with — a manual swap
  *  (actual_*) wins over the imported plan (source_name/planned_user_id). */
 export function effectiveAssignmentName(assignment: ShiftAssignment): string {
@@ -110,7 +167,11 @@ export function lockedSlotsForSetup(input: {
   isCommander: boolean
   importEnabled: boolean
   datedBySlot: ReadonlyMap<string, unknown>
+  /** Slots whose shift was cancelled: shown empty and read-only for everyone. */
+  cancelledBySlot?: ReadonlyMap<string, unknown>
 }): Set<string> {
-  if (input.isAdmin || !input.isCommander || !input.importEnabled) return new Set()
-  return new Set(input.datedBySlot.keys())
+  if (!input.importEnabled) return new Set()
+  const locked = new Set<string>(input.cancelledBySlot?.keys() ?? [])
+  if (!input.isAdmin && input.isCommander) for (const k of input.datedBySlot.keys()) locked.add(k)
+  return locked
 }

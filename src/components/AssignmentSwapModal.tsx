@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useProfiles } from '../hooks/useProfiles'
 import { callReplaceAssignmentWorker } from '../lib/scheduleImports'
+import { ScheduleEditError } from '../lib/scheduleEdits'
 
 const QUICK_REASONS = ['לא הגיע', 'מחלה', 'החלפה']
 
@@ -10,18 +11,25 @@ function getReadableError(error: unknown): string {
 
 export function AssignmentSwapModal({
   assignmentId,
+  expectedUpdatedAt,
   onClose,
   onSaved,
+  onStale,
 }: {
   assignmentId: string
+  /** The version of the assignment this screen displayed (its updated_at). */
+  expectedUpdatedAt: string
   onClose: () => void
   onSaved: () => void
+  /** The assignment changed (or was cancelled) after this screen loaded it. */
+  onStale: () => void
 }) {
   const profilesQuery = useProfiles()
   const [selectedUserId, setSelectedUserId] = useState('')
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [stale, setStale] = useState(false)
 
   async function handleSave() {
     if (!selectedUserId) {
@@ -43,10 +51,17 @@ export function AssignmentSwapModal({
         newUserId: selectedUserId,
         newName: profile?.full_name ?? '',
         reason: reason.trim(),
+        expectedUpdatedAt,
       })
       onSaved()
     } catch (err) {
-      setError(getReadableError(err))
+      if (err instanceof ScheduleEditError && (err.kind === 'concurrent' || err.kind === 'cancelled')) {
+        // never overwrite a change someone else made: ask for a reload instead
+        setStale(true)
+        setError(err.kind === 'cancelled' ? 'השיבוץ בוטל בינתיים. יש לטעון מחדש.' : 'השיבוץ שונה בינתיים על ידי משתמש אחר. יש לטעון מחדש ולנסות שוב.')
+      } else {
+        setError(getReadableError(err))
+      }
     } finally {
       setSaving(false)
     }
@@ -102,9 +117,15 @@ export function AssignmentSwapModal({
           <button type="button" onClick={onClose} disabled={saving}>
             ביטול
           </button>
-          <button type="button" onClick={handleSave} disabled={saving}>
-            {saving ? 'שומר…' : 'שמור'}
-          </button>
+          {stale ? (
+            <button type="button" onClick={onStale} className="font-bold">
+              טען מחדש
+            </button>
+          ) : (
+            <button type="button" onClick={handleSave} disabled={saving}>
+              {saving ? 'שומר…' : 'שמור'}
+            </button>
+          )}
         </div>
       </div>
     </div>

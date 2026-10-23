@@ -29,6 +29,8 @@ import {
   workDateForCategory,
   weekStartIsoFor,
   indexDatedBySlot,
+  indexCancelledBySlot,
+  keepTemplateNamesForSlots,
   lockedSlotsForSetup,
   effectiveAssignmentName,
   effectiveAssignmentUserId,
@@ -112,12 +114,23 @@ export function ShiftSetupPage() {
     [board, assignmentsQuery.data, scheduleImportFlag.enabled, workDate],
   )
 
+  // A shift a manager cancelled in the weekly schedule must show as EMPTY here
+  // (never the older name from the board template) and is not editable from this
+  // screen: restoring it is done in the weekly schedule.
+  const cancelledBySlot = useMemo(
+    () =>
+      board && scheduleImportFlag.enabled
+        ? indexCancelledBySlot(assignmentsQuery.data ?? [], board.cols ?? [], board.shift_type, workDate)
+        : new Map<string, ShiftAssignment>(),
+    [board, assignmentsQuery.data, scheduleImportFlag.enabled, workDate],
+  )
+
   // An אחמ"ש cannot change imported assignments from here (only a מנהל can);
   // those slots are shown read-only with a pointer to the live screen, instead
   // of accepting an edit that "saves" but changes nothing that is displayed.
   const lockedSlots = useMemo(
-    () => lockedSlotsForSetup({ isAdmin, isCommander, importEnabled: scheduleImportFlag.enabled, datedBySlot }),
-    [isAdmin, isCommander, scheduleImportFlag.enabled, datedBySlot],
+    () => lockedSlotsForSetup({ isAdmin, isCommander, importEnabled: scheduleImportFlag.enabled, datedBySlot, cancelledBySlot }),
+    [isAdmin, isCommander, scheduleImportFlag.enabled, datedBySlot, cancelledBySlot],
   )
 
   // ── Pull-to-refresh ──
@@ -152,8 +165,9 @@ export function ShiftSetupPage() {
         user_id: effectiveAssignmentUserId(assignment),
       }
     }
+    for (const role of cancelledBySlot.keys()) next[role] = { name: '', user_id: null }
     setGuardNames(next)
-  }, [board, workDate, datedBySlot, scheduleImportFlag.enabled, assignmentsQuery.isLoading])
+  }, [board, workDate, datedBySlot, cancelledBySlot, scheduleImportFlag.enabled, assignmentsQuery.isLoading])
 
   function handleCategoryChange(cat: ShiftCategory) {
     setCategory(cat)
@@ -189,7 +203,8 @@ export function ShiftSetupPage() {
     // commanders keep using that flow for a same-shift correction.
     const outcome = await performRosterSave({
       boardId: board.id,
-      guardNames,
+      // a cancelled shift's slot is shown empty, but the template keeps its own value
+      guardNames: keepTemplateNamesForSlots(guardNames, board.guard_names, cancelledBySlot.keys()),
       datedWrites,
       canWriteDated: isAdmin,
       // Staffing a variant here is what a manager means by "this is today's
@@ -223,6 +238,12 @@ export function ShiftSetupPage() {
     if (outcome.status === 'publish-failed') {
       console.error('Failed to publish the staffed board', outcome.error)
       toast.error('השמות נשמרו, אך המשמרת לא עלתה לשידור החי — נסה שוב.')
+      return
+    }
+
+    if (outcome.status === 'stale') {
+      toast.error('השיבוץ שונה בינתיים על ידי משתמש אחר ולכן לא עודכן. הנתונים רועננו — בדוק ושמור שוב.')
+      initializedKeyRef.current = null
       return
     }
 
@@ -379,7 +400,15 @@ export function ShiftSetupPage() {
         ) : (
           <div className="flex flex-col gap-2 lg:grid lg:grid-cols-2 lg:gap-3 lg:content-start">
             <p className="text-xs font-medium text-text-muted lg:col-span-2">שמות מאבטחים</p>
-            {lockedSlots.size > 0 && (
+            {cancelledBySlot.size > 0 && (
+              <div className="card p-3 text-xs text-text-secondary leading-relaxed lg:col-span-2" role="note">
+                {cancelledBySlot.size === 1 ? 'שיבוץ אחד בוטל' : `${cancelledBySlot.size} שיבוצים בוטלו`} בלו״ז השבועי ולכן מוצג ריק.{' '}
+                <Link to="/weekly-schedule" className="font-bold text-primary underline">
+                  לשחזור — ללו״ז השבועי
+                </Link>
+              </div>
+            )}
+            {lockedSlots.size > cancelledBySlot.size && (
               <div className="card p-3 text-xs text-text-secondary leading-relaxed lg:col-span-2" role="note">
                 השיבוץ של המשמרת נטען מהסידור השבועי ולכן אי אפשר לשנות אותו מכאן.{' '}
                 <Link to="/shift-live" className="font-bold text-primary underline">

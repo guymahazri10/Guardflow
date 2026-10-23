@@ -27,7 +27,7 @@
 -- publish_schedule_import, replace_assignment_worker and shift_assignments'
 -- columns are NOT changed.
 
-alter table public.staffing_change_log add column details jsonb;
+alter table public.staffing_change_log add column if not exists details jsonb;
 
 alter table public.staffing_change_log drop constraint staffing_change_log_change_kind_check;
 alter table public.staffing_change_log add constraint staffing_change_log_change_kind_check check (
@@ -437,6 +437,79 @@ grant execute on function public.edit_shift_assignment(uuid, timestamptz, jsonb,
 grant execute on function public.add_shift_assignment(jsonb, text) to authenticated;
 grant execute on function public.cancel_shift_assignment(uuid, timestamptz, text) to authenticated;
 grant execute on function public.restore_shift_assignment(uuid, timestamptz, text) to authenticated;
+
+
+-- ---------------------------------------------------------------------------
+-- replace_assignment_worker WITH a concurrency check (the Live swap and the Setup
+-- bulk save). The 4-parameter function from phase20c is deliberately left in
+-- place and unchanged, because the client that is live when this migration runs
+-- calls it with exactly those four named parameters. The new function takes a
+-- fifth parameter with NO default, so a four-parameter call can only ever
+-- resolve to the old function and a five-parameter call only to this one
+-- (PostgREST never sees an ambiguous overload — the same rule as phase20k).
+--
+-- Same rules as before (manager: any assignment; אחמ"ש: only one in progress),
+-- plus: the caller names the updated_at it saw, and a row that changed since
+-- (another editor, a manager's edit, a replacement) is refused instead of being
+-- overwritten; a cancelled shift cannot be replaced.
+
+create or replace function public.replace_assignment_worker(
+  p_assignment_id uuid,
+  p_new_user_id uuid,
+  p_new_name text,
+  p_reason text,
+  p_expected_updated_at timestamptz
+)
+returns public.shift_assignments
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller_role text := public.get_my_role();
+  old_row public.shift_assignments;
+  result public.shift_assignments;
+begin
+  if coalesce(caller_role, '') not in ('מנהל', 'אחמ"ש') then
+    raise exception 'Only מנהל or אחמ"ש can replace an assignment worker' using errcode = '42501';
+  end if;
+
+  select * into old_row from public.shift_assignments where id = p_assignment_id for update;
+  if old_row.id is null then
+    raise exception 'Assignment not found';
+  end if;
+  if not old_row.published then
+    raise exception 'assignment_cancelled' using errcode = '22023';
+  end if;
+
+  if caller_role = 'אחמ"ש' then
+    if not (now() >= old_row.starts_at and now() < old_row.ends_at) then
+      raise exception 'אחמ"ש יכול להחליף רק שיבוץ פעיל כעת' using errcode = '42501';
+    end if;
+  end if;
+
+  if p_expected_updated_at is null or old_row.updated_at is distinct from p_expected_updated_at then
+    raise exception 'concurrent_change' using errcode = '40001';
+  end if;
+
+  update public.shift_assignments
+  set actual_user_id = p_new_user_id, actual_name = p_new_name, is_manually_edited = true, updated_at = clock_timestamp()
+  where id = p_assignment_id
+  returning * into result;
+
+  insert into public.staffing_change_log (
+    assignment_id, from_user_id, from_name, to_user_id, to_name, reason, change_kind, changed_by, changed_at, details
+  ) values (
+    p_assignment_id, old_row.actual_user_id, old_row.actual_name, p_new_user_id, p_new_name, p_reason, 'manual_replace', auth.uid(), clock_timestamp(),
+    jsonb_build_object('before', public.assignment_snapshot(old_row), 'after', public.assignment_snapshot(result))
+  );
+
+  return result;
+end;
+$$;
+
+revoke execute on function public.replace_assignment_worker(uuid, uuid, text, text, timestamptz) from public, anon;
+grant execute on function public.replace_assignment_worker(uuid, uuid, text, text, timestamptz) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- get_my_shifts: a worker REPLACEMENT is decided by shift_worker_replaced, not
