@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isFlagAllowedFor, isFlagEnabled } from './featureFlags'
+import { isFlagAllowedFor, isFlagEnabled } from './featureFlagRules'
 
 describe('feature flag rules', () => {
   const rolledOutToManagerOnly = { enabled: true, allowed_user_ids: ['manager'] }

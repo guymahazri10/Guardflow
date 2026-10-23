@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchFeatureFlag, isFlagAllowedFor, isFlagEnabled } from '../lib/featureFlags'
+import { fetchFeatureFlag } from '../lib/featureFlags'
+import { isFlagAllowedFor, isFlagEnabled } from '../lib/featureFlagRules'
 import { useAuth } from '../contexts/AuthContext'
 
 export function useFeatureFlag(id: string): { enabled: boolean; loading: boolean } {
