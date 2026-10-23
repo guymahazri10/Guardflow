@@ -184,7 +184,7 @@ export function ScheduleEditorModal({
     target.type === 'add' ? 'הוספת שיבוץ' : target.type === 'restore' ? 'שחזור שיבוץ' : step === 'cancel' ? 'ביטול שיבוץ' : 'עריכת שיבוץ'
 
   return (
-    <div dir="rtl" role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
+    <div dir="rtl" role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 sm:items-center">
       <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-extrabold">{title}</h2>
