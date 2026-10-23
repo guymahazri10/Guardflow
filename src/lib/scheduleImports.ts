@@ -33,6 +33,7 @@ export type ShiftAssignment = {
   import_id: string | null
   is_manually_edited: boolean
   published: boolean
+  updated_at: string
 }
 
 /** One row as returned by publish_schedule_import's diff — same shape in

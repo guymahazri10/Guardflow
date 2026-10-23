@@ -6,6 +6,8 @@ export type ExistingAssignmentSummary = {
   position: string
   slot_index: number
   is_manually_edited: boolean
+  /** Cancelled by hand: kept as a marker, not shown in the schedule. */
+  cancelled?: boolean
 }
 
 function identityKey(a: { work_date: string; shift_category: string; position: string; slot_index: number }): string {
@@ -42,7 +44,9 @@ export function validateSchedule(
       conflicts.push(assignment)
       warnings.push({
         kind: 'conflict_with_existing',
-        message: `שיבוץ זה נערך ידנית ולא יידרס אוטומטית: ${assignment.position} ${assignment.work_date}`,
+        message: existingRow.cancelled
+          ? `שיבוץ זה בוטל ידנית ולא יחזור אוטומטית: ${assignment.position} ${assignment.work_date}`
+          : `שיבוץ זה נערך ידנית ולא יידרס אוטומטית: ${assignment.position} ${assignment.work_date}`,
         work_date: assignment.work_date,
         position: assignment.position,
       })

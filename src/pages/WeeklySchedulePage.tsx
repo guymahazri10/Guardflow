@@ -8,6 +8,8 @@ import { allKnownPositionsForCategory } from '../lib/scheduleImport/liveBoardPos
 import { SHIFT_CATEGORIES, type ShiftCategory } from '../constants/shifts'
 import { AlertIcon, ClipboardIcon } from '../components/ui/StateIcon'
 import { MyShiftsList } from '../components/MyShiftsList'
+import { ScheduleEditorModal, type EditorTarget } from '../components/ScheduleEditorModal'
+import { useAuth } from '../contexts/AuthContext'
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return <div className="flex flex-col flex-1 max-w-mobile mx-auto w-full lg:max-w-7xl">{children}</div>
@@ -53,6 +55,11 @@ export function WeeklySchedulePage() {
   const currentWeekIso = weekStartIsoFor(new Date())
   const [weekStartIso, setWeekStartIso] = useState(currentWeekIso)
   const [tab, setTab] = useState<'all' | 'mine'>('all')
+  const { isAdmin } = useAuth()
+  // Editing the published schedule is a manager-only tool (also enforced by the
+  // database functions). Nobody else gets the button or the cell actions.
+  const [editMode, setEditMode] = useState(false)
+  const [editor, setEditor] = useState<EditorTarget | null>(null)
   const assignmentsQuery = useShiftAssignmentsForWeek(weekStartIso)
 
   const days = useMemo(
@@ -62,6 +69,17 @@ export function WeeklySchedulePage() {
 
   const assignments = useMemo(() => assignmentsQuery.data ?? [], [assignmentsQuery.data])
   const assignmentsByKey = useMemo(() => bucketPublishedAssignments(assignments), [assignments])
+  // Cancelled shifts stay in the table as markers (published = false, edited by hand),
+  // visible to the manager in edit mode so they can be restored.
+  const cancelledByKey = useMemo(() => {
+    const map = new Map<string, ShiftAssignment[]>()
+    for (const a of assignments) {
+      if (a.published || !a.is_manually_edited) continue
+      const key = weeklyCellKey(a.work_date, a.shift_category, a.position)
+      map.set(key, [...(map.get(key) ?? []), a])
+    }
+    return map
+  }, [assignments])
   const hasAnyPublished = useMemo(
     () => days.some((day) => assignments.some((a) => a.published && a.work_date === day)),
     [days, assignments],
@@ -101,6 +119,19 @@ export function WeeklySchedulePage() {
             </button>
           ))}
         </div>
+        {tab === 'all' && isAdmin && (
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              className={editMode ? 'btn-primary px-4 py-2 text-sm' : 'btn-ghost px-4 py-2 text-sm'}
+              aria-pressed={editMode}
+              onClick={() => setEditMode((v) => !v)}
+            >
+              {editMode ? 'סיום עריכה' : 'עריכת הסידור'}
+            </button>
+            {editMode && <span className="text-xs text-text-secondary">לחץ על שיבוץ לעריכה, או על + להוספה</span>}
+          </div>
+        )}
         {tab === 'mine' ? (
           <div role="tabpanel" id="weekly-panel-mine" aria-labelledby="weekly-tab-mine">
             <MyShiftsList weekStartIso={weekStartIso} />
@@ -109,12 +140,29 @@ export function WeeklySchedulePage() {
           <LoadingSkeleton />
         ) : assignmentsQuery.isError ? (
           <ErrorState onRetry={() => assignmentsQuery.refetch()} />
-        ) : !hasAnyPublished ? (
+        ) : !hasAnyPublished && !(editMode && isAdmin) ? (
           <EmptyState />
         ) : (
-          <WeekTable days={days} assignments={assignments} assignmentsByKey={assignmentsByKey} />
+          <WeekTable
+            days={days}
+            assignments={assignments}
+            assignmentsByKey={assignmentsByKey}
+            cancelledByKey={cancelledByKey}
+            editMode={editMode && isAdmin}
+            onEdit={(a) => setEditor({ type: 'edit', assignment: a })}
+            onRestore={(a) => setEditor({ type: 'restore', assignment: a })}
+            onAdd={(t) => setEditor({ type: 'add', ...t })}
+          />
         )}
       </div>
+      {editor && (
+        <ScheduleEditorModal
+          target={editor}
+          weekAssignments={assignments}
+          onClose={() => setEditor(null)}
+          onSaved={() => setEditor(null)}
+        />
+      )}
     </PageShell>
   )
 }
@@ -157,14 +205,26 @@ function hoursLabel(a: ShiftAssignment): string {
   return `${utcIsoToIsraelHHMM(a.starts_at)}–${utcIsoToIsraelHHMM(a.ends_at)}`
 }
 
+type AddTarget = { workDate: string; category: ShiftCategory; position: string; workerKind: 'אחמ"ש' | 'מאבטח'; slotIndex: number }
+
 function WeekTable({
   days,
   assignments,
   assignmentsByKey,
+  cancelledByKey,
+  editMode,
+  onEdit,
+  onRestore,
+  onAdd,
 }: {
   days: string[]
   assignments: ShiftAssignment[]
   assignmentsByKey: Map<string, ShiftAssignment[]>
+  cancelledByKey: Map<string, ShiftAssignment[]>
+  editMode: boolean
+  onEdit: (a: ShiftAssignment) => void
+  onRestore: (a: ShiftAssignment) => void
+  onAdd: (t: AddTarget) => void
 }) {
   // Reported directly: scrolling to see later days lost the position label
   // entirely, so a cell was unreadable without scrolling back. `right-0`
@@ -173,19 +233,61 @@ function WeekTable({
   // container, not a logical/direction-aware one, so this has to match
   // where the column actually is, not where "start" would be in LTR.
   function Cell({ row, day }: { row: Row; day: string }) {
-    const bucket = assignmentsByKey.get(weeklyCellKey(day, row.shiftCategory, row.position)) ?? []
-    if (bucket.length === 0) {
+    const key = weeklyCellKey(day, row.shiftCategory, row.position)
+    const bucket = assignmentsByKey.get(key) ?? []
+    const cancelled = editMode ? (cancelledByKey.get(key) ?? []) : []
+    const workerKind = row.position === 'אחמ"ש' ? 'אחמ"ש' : 'מאבטח'
+    if (bucket.length === 0 && cancelled.length === 0 && !editMode) {
       return <td className="px-3 py-2 text-center text-text-muted">—</td>
     }
     return (
       <td className="px-3 py-2 text-center">
         <div className="flex flex-col gap-0.5">
-          {bucket.map((a) => (
-            <span key={a.id}>
-              <span className="block font-medium">{assignmentLabel(a)}</span>
-              <span dir="ltr" className="block text-[11px] text-text-secondary">{hoursLabel(a)}</span>
-            </span>
+          {bucket.map((a) => {
+            const body = (
+              <>
+                <span className="block font-medium">{assignmentLabel(a)}</span>
+                <span dir="ltr" className="block text-[11px] text-text-secondary">{hoursLabel(a)}</span>
+              </>
+            )
+            return editMode ? (
+              <button
+                key={a.id}
+                type="button"
+                className="rounded-lg border border-dashed border-primary/40 px-1.5 py-1 text-center hover:bg-primary-light"
+                aria-label={`עריכת שיבוץ: ${assignmentLabel(a)} ${row.position} ${formatIsraelShortDateLabel(day)}`}
+                onClick={() => onEdit(a)}
+              >
+                {body}
+              </button>
+            ) : (
+              <span key={a.id}>{body}</span>
+            )
+          })}
+          {cancelled.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className="rounded-lg bg-background-2 px-1.5 py-1 text-center text-text-muted"
+              aria-label={`שחזור שיבוץ שבוטל: ${assignmentLabel(a)} ${row.position} ${formatIsraelShortDateLabel(day)}`}
+              onClick={() => onRestore(a)}
+            >
+              <span className="block text-xs line-through">{assignmentLabel(a)}</span>
+              <span className="block text-[11px] font-semibold text-primary">שחזר שיבוץ</span>
+            </button>
           ))}
+          {editMode && (
+            <button
+              type="button"
+              className="mx-auto rounded-full px-2 text-xs font-bold text-primary"
+              aria-label={`הוספת שיבוץ ${row.position} ${formatIsraelShortDateLabel(day)}`}
+              onClick={() =>
+                onAdd({ workDate: day, category: row.shiftCategory, position: row.position, workerKind, slotIndex: bucket.length })
+              }
+            >
+              + הוסף
+            </button>
+          )}
         </div>
       </td>
     )

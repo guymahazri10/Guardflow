@@ -248,6 +248,7 @@ export function ScheduleImportPage() {
       position: a.position,
       slot_index: a.slot_index,
       is_manually_edited: a.is_manually_edited,
+      cancelled: !a.published && a.is_manually_edited,
     }))
 
     const validated = validateSchedule(matched, existingSummaries)
@@ -832,6 +833,10 @@ function SchedulePreview({
   // until every one of them is ticked — the data is shown exactly as read.
   const [ackedWarnings, setAckedWarnings] = useState<Set<string>>(new Set())
 
+  // Shifts a manager cancelled by hand stay in the table as markers (published =
+  // false). They are kept on re-upload, but they are not people at work, so they
+  // must not count as overlapping anyone.
+  const [cancelledIds, setCancelledIds] = useState<Set<string>>(new Set())
   const conflictKeys = new Set(conflicts.map((c) => identityKey(c)))
   const previewGrid = buildPreviewGrid(assignments, new Set(), detectedWeekStart)
 
@@ -898,6 +903,12 @@ function SchedulePreview({
         dryRun: true,
       })
       setDryRunResult(diff)
+      try {
+        const current = await fetchShiftAssignmentsForWeek(detectedWeekStart)
+        setCancelledIds(new Set(current.filter((a) => !a.published).map((a) => a.id)))
+      } catch {
+        setCancelledIds(new Set())
+      }
       // A fresh diff means the previous deletion approvals no longer apply —
       // the manager must re-approve against the new list, even if it happens
       // to be identical, rather than carrying stale approvals forward.
@@ -912,7 +923,12 @@ function SchedulePreview({
 
   const overlapWarnings =
     !isDirty && dryRunResult
-      ? detectOverlaps([...dryRunResult.to_insert, ...dryRunResult.to_update, ...dryRunResult.unchanged, ...dryRunResult.to_keep_manual])
+      ? detectOverlaps([
+          ...dryRunResult.to_insert,
+          ...dryRunResult.to_update,
+          ...dryRunResult.unchanged,
+          ...dryRunResult.to_keep_manual.filter((r) => !(r.id && cancelledIds.has(r.id))),
+        ])
       : []
 
   const pendingDeletes = !isDirty && dryRunResult ? dryRunResult.to_delete : []
