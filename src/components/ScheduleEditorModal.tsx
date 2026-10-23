@@ -353,7 +353,7 @@ export function ScheduleEditorModal({
                   <Line label="פעולה" after="הוספת שיבוץ חדש" />
                   <Line label="עמדה" after={`${SHIFT_CATEGORIES[draft.category].label} · ${draft.position}`} />
                   <Line label="עובד" after={`${proposedWorker.name || '—'}${proposedWorker.userId ? '' : ' (שם חופשי, ללא חשבון)'}`} />
-                  <Line label="שעות" after={times ? `${draft.startTime}–${draft.endTime}${times.crossesMidnight ? ` (מסתיימת ב־${formatIsraelDateLabel(times.endDate)})` : ''}` : '—'} />
+                  <Line label="שעות" after={times ? `\u2066${draft.startTime}–${draft.endTime}\u2069${times.crossesMidnight ? ` (מסתיימת ב־${formatIsraelDateLabel(times.endDate)})` : ''}` : '—'} />
                 </>
               ) : (
                 summary.map((l) => <Line key={l.label} label={l.label} before={l.before} after={l.after} />)

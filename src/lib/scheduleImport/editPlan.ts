@@ -98,7 +98,8 @@ export type SummaryLine = { label: string; before: string; after: string }
 function hoursText(startsAt: string, endsAt: string, workDate: string): string {
   const endDate = new Date(endsAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })
   const next = endDate > workDate
-  return `${utcIsoToIsraelHHMM(startsAt)}–${utcIsoToIsraelHHMM(endsAt)}${next ? ` (מסתיימת ב־${formatIsraelShortDateLabel(endDate)})` : ''}`
+  // the hours range is isolated left-to-right so it reads 15:00–23:10 inside RTL text
+  return `\u2066${utcIsoToIsraelHHMM(startsAt)}–${utcIsoToIsraelHHMM(endsAt)}\u2069${next ? ` (מסתיימת ב־${formatIsraelShortDateLabel(endDate)})` : ''}`
 }
 
 /** Human summary of an edit: date, and what was vs. what will be. */
