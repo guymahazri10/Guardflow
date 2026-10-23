@@ -228,7 +228,7 @@ describe('Setup / Live read the name from the file when no user is linked', () =
     id: 'r1', work_date: '2026-10-18', shift_category: 'morning', worker_kind: 'מאבטח', position: 'AB', slot_index: 0,
     starts_at: '2026-10-18T03:45:00.000Z', ends_at: '2026-10-18T12:10:00.000Z', source_name: 'שם מהקובץ',
     planned_user_id: null, actual_user_id: null, actual_name: 'שם מהקובץ', source: 'excel', import_id: 'i',
-    is_manually_edited: false, published: true, ...over,
+    is_manually_edited: false, published: true, updated_at: '2026-09-01T00:00:00Z', ...over,
   })
 
   it('shows source_name with no planned user', () => {

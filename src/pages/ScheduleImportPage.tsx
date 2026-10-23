@@ -904,6 +904,7 @@ function SchedulePreview({
       })
       setDryRunResult(diff)
       try {
+        if (!detectedWeekStart) throw new Error('no week')
         const current = await fetchShiftAssignmentsForWeek(detectedWeekStart)
         setCancelledIds(new Set(current.filter((a) => !a.published).map((a) => a.id)))
       } catch {

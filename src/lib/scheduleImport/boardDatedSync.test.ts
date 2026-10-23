@@ -26,6 +26,7 @@ function assignment(overrides: Partial<ShiftAssignment> = {}): ShiftAssignment {
     source: 'image',
     import_id: 'i1',
     is_manually_edited: false,
+    updated_at: '2026-09-01T00:00:00Z',
     published: true,
     ...overrides,
   }
