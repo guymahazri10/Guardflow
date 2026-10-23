@@ -22,6 +22,10 @@ export function useMyShifts(weekStart: string) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shift_assignments' }, () => {
         queryClient.invalidateQueries({ queryKey: myShiftsKey(weekStart) })
       })
+      // a cancelled / moved shift becomes invisible to the user: see useShiftAssignmentsForWeek
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_revisions' }, () => {
+        queryClient.invalidateQueries({ queryKey: myShiftsKey(weekStart) })
+      })
       .subscribe()
     return () => {
       supabase.removeChannel(channel)

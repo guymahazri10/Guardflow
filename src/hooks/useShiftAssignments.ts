@@ -25,6 +25,17 @@ export function useShiftAssignmentsForWeek(weekStart: string) {
           queryClient.invalidateQueries({ queryKey })
         },
       )
+      // A manager cancelling or moving a shift hides its row from everyone who cannot read
+      // unpublished rows, and Realtime does not announce a row that became invisible. Every
+      // manager edit also bumps schedule_revisions, which every signed-in user can read, so
+      // this screen refetches and drops the shift it still has cached.
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'schedule_revisions' },
+        () => {
+          queryClient.invalidateQueries({ queryKey })
+        },
+      )
       .subscribe()
 
     return () => {
