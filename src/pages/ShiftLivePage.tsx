@@ -12,7 +12,7 @@ import { workDateForCategory, weekStartIsoFor, findDatedForSlot, findCancelledFo
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import { getCurrentBlock } from '../lib/shiftBlocks'
 import type { RosterBoard, RosterBoardRow } from '../lib/rosterBoards'
-import { useFeatureFlag } from '../hooks/useFeatureFlag'
+import { useFeatureEnabled } from '../hooks/useFeatureFlag'
 import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
 import { useCancelledSlots } from '../hooks/useCancelledSlots'
 import { useAuth } from '../contexts/AuthContext'
@@ -61,7 +61,8 @@ export function ShiftLivePage() {
   const currentBlock = board ? getCurrentBlock(board.rows ?? [], now, isNight) : null
   const cols: string[] = board?.cols ?? []
 
-  const scheduleImportFlag = useFeatureFlag('weekly_schedule_import')
+  // every signed-in role sees the published dated schedule; only the global switch gates it
+  const scheduleImportFlag = useFeatureEnabled('weekly_schedule_import')
   // Local calendar date, not UTC — using toISOString() here computed the UTC
   // date, which is wrong for ~3 hours after Israel midnight (Israel is
   // UTC+2/+3), showing night-shift crews the wrong day's assignments during

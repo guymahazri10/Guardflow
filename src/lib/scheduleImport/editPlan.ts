@@ -1,35 +1,6 @@
 import { addDaysIso, israelLocalToUtcIso, utcIsoToIsraelHHMM, formatIsraelShortDateLabel } from '../israelTime'
-import { SHIFT_CATEGORIES } from '../../constants/shifts'
 import { personNameKey } from './matchNames'
 import type { ShiftAssignment } from '../scheduleImports'
-import type { ShiftChanges } from '../scheduleEdits'
-
-export type WorkerDraft =
-  | { kind: 'keep' }
-  | { kind: 'account'; userId: string; name: string }
-  | { kind: 'free'; name: string }
-
-export type EditDraft = {
-  workDate: string
-  category: 'morning' | 'afternoon' | 'night'
-  position: string
-  slotIndex: number
-  startTime: string // HH:MM, Israel time
-  endTime: string // HH:MM, Israel time
-  worker: WorkerDraft
-}
-
-export function draftFromAssignment(a: ShiftAssignment): EditDraft {
-  return {
-    workDate: a.work_date,
-    category: a.shift_category,
-    position: a.position,
-    slotIndex: a.slot_index,
-    startTime: utcIsoToIsraelHHMM(a.starts_at),
-    endTime: utcIsoToIsraelHHMM(a.ends_at),
-    worker: { kind: 'keep' },
-  }
-}
 
 function parseHm(value: string): [number, number] | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim())
@@ -60,70 +31,6 @@ export function computeTimes(
     endDate,
     crossesMidnight: crosses,
   }
-}
-
-export function validateDraft(draft: EditDraft): string[] {
-  const problems: string[] = []
-  const times = computeTimes(draft.workDate, draft.startTime, draft.endTime)
-  if (!times) problems.push('שעת התחלה או סיום אינה תקינה.')
-  else {
-    const hours = (Date.parse(times.endsAt) - Date.parse(times.startsAt)) / 3_600_000
-    if (hours <= 0) problems.push('שעת הסיום חייבת להיות אחרי שעת ההתחלה.')
-    if (hours > 16) problems.push('משמרת ארוכה מ־16 שעות אינה מותרת.')
-  }
-  if (!draft.position.trim()) problems.push('יש לבחור עמדה.')
-  if (draft.worker.kind === 'free' && !draft.worker.name.trim()) problems.push('יש להזין שם עובד.')
-  if (draft.worker.kind === 'account' && !draft.worker.userId) problems.push('יש לבחור חשבון.')
-  return problems
-}
-
-/** Only what actually changed, in the shape edit_shift_assignment expects. */
-export function buildChanges(original: ShiftAssignment, draft: EditDraft): ShiftChanges {
-  const changes: ShiftChanges = {}
-  const times = computeTimes(draft.workDate, draft.startTime, draft.endTime)
-  if (times) {
-    if (Date.parse(times.startsAt) !== Date.parse(original.starts_at)) changes.starts_at = times.startsAt
-    if (Date.parse(times.endsAt) !== Date.parse(original.ends_at)) changes.ends_at = times.endsAt
-  }
-  if (draft.category !== original.shift_category) changes.shift_category = draft.category
-  if (draft.position !== original.position) changes.position = draft.position
-  if (draft.slotIndex !== original.slot_index) changes.slot_index = draft.slotIndex
-  if (draft.worker.kind === 'account') changes.worker = { user_id: draft.worker.userId, name: draft.worker.name }
-  if (draft.worker.kind === 'free') changes.worker = { user_id: null, name: draft.worker.name.trim() }
-  return changes
-}
-
-export type SummaryLine = { label: string; before: string; after: string }
-
-function hoursText(startsAt: string, endsAt: string, workDate: string): string {
-  const endDate = new Date(endsAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' })
-  const next = endDate > workDate
-  // the hours range is isolated left-to-right so it reads 15:00–23:10 inside RTL text
-  return `\u2066${utcIsoToIsraelHHMM(startsAt)}–${utcIsoToIsraelHHMM(endsAt)}\u2069${next ? ` (מסתיימת ב־${formatIsraelShortDateLabel(endDate)})` : ''}`
-}
-
-/** Human summary of an edit: date, and what was vs. what will be. */
-export function describeEdit(original: ShiftAssignment, draft: EditDraft): SummaryLine[] {
-  const lines: SummaryLine[] = []
-  const times = computeTimes(draft.workDate, draft.startTime, draft.endTime)
-  const before = hoursText(original.starts_at, original.ends_at, original.work_date)
-  const after = times ? hoursText(times.startsAt, times.endsAt, draft.workDate) : '—'
-  if (before !== after) lines.push({ label: 'שעות', before, after })
-  if (draft.category !== original.shift_category)
-    lines.push({ label: 'משמרת', before: SHIFT_CATEGORIES[original.shift_category].label, after: SHIFT_CATEGORIES[draft.category].label })
-  if (draft.position !== original.position || draft.slotIndex !== original.slot_index)
-    lines.push({
-      label: 'עמדה',
-      before: `${original.position}${original.slot_index > 0 ? ` (${original.slot_index + 1})` : ''}`,
-      after: `${draft.position}${draft.slotIndex > 0 ? ` (${draft.slotIndex + 1})` : ''}`,
-    })
-  if (draft.worker.kind !== 'keep') {
-    const was = original.actual_name ?? original.source_name ?? '—'
-    const now = draft.worker.name.trim() || '—'
-    if (was !== now || draft.worker.kind === 'free' !== (original.actual_user_id === null))
-      lines.push({ label: 'עובד', before: was, after: draft.worker.kind === 'free' ? `${now} (שם חופשי, ללא חשבון)` : now })
-  }
-  return lines
 }
 
 export type OverlapInfo = { id: string; dateLabel: string; position: string; hours: string; name: string }
@@ -157,4 +64,30 @@ export function findOverlaps(
 
 export function isPastDate(workDate: string, todayIso: string): boolean {
   return workDate < todayIso
+}
+
+/** Standard hours of a shift when a name is put into an empty slot that has no earlier shift to copy
+ *  them from: guards 06:45–15:10 / 14:45–23:10 / 22:45–07:10, shift commanders
+ *  06:30–15:00 / 14:30–23:00 / 22:30–07:00 (the hours the weekly Excel uses). */
+export function defaultShiftHours(category: 'morning' | 'afternoon' | 'night', workerKind: 'אחמ"ש' | 'מאבטח'): { start: string; end: string } {
+  const guard = { morning: ['06:45', '15:10'], afternoon: ['14:45', '23:10'], night: ['22:45', '07:10'] } as const
+  const commander = { morning: ['06:30', '15:00'], afternoon: ['14:30', '23:00'], night: ['22:30', '07:00'] } as const
+  const [start, end] = (workerKind === 'אחמ"ש' ? commander : guard)[category]
+  return { start, end }
+}
+
+/** The account a typed name refers to: the one picked from the suggestions, otherwise the single
+ *  account whose full name is exactly this name. Anything else is a free-text name with no account —
+ *  never a guess from a similar name. */
+export function resolveWorkerAccount(
+  text: string,
+  pickedId: string | null,
+  profiles: { id: string; full_name: string | null }[],
+): { userId: string | null; name: string } {
+  const name = text.trim()
+  if (pickedId && profiles.some((p) => p.id === pickedId)) return { userId: pickedId, name }
+  const key = personNameKey(name)
+  if (!key) return { userId: null, name }
+  const exact = profiles.filter((p) => personNameKey(p.full_name) === key)
+  return { userId: exact.length === 1 ? exact[0].id : null, name }
 }

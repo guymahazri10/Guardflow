@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildChanges, computeTimes, describeEdit, draftFromAssignment, findOverlaps, isPastDate, validateDraft } from './editPlan'
+import { computeTimes, defaultShiftHours, findOverlaps, isPastDate, resolveWorkerAccount } from './editPlan'
 import type { ShiftAssignment } from '../scheduleImports'
 
 const base: ShiftAssignment = {
@@ -26,39 +26,41 @@ describe('computeTimes', () => {
   })
 })
 
-describe('validateDraft / buildChanges', () => {
-  it('a draft equal to the original has no changes', () => {
-    expect(buildChanges(base, draftFromAssignment(base))).toEqual({})
+describe('defaultShiftHours', () => {
+  it('uses the standard Excel hours for guards and for shift commanders', () => {
+    expect(defaultShiftHours('morning', 'מאבטח')).toEqual({ start: '06:45', end: '15:10' })
+    expect(defaultShiftHours('night', 'מאבטח')).toEqual({ start: '22:45', end: '07:10' })
+    expect(defaultShiftHours('afternoon', 'אחמ"ש')).toEqual({ start: '14:30', end: '23:00' })
   })
-  it('sends only the hours that changed', () => {
-    const d = { ...draftFromAssignment(base), startTime: '07:00' }
-    const c = buildChanges(base, d)
-    expect(Object.keys(c)).toEqual(['starts_at'])
-  })
-  it('keeps account and free-text workers separate, with no name matching', () => {
-    const acc = buildChanges(base, { ...draftFromAssignment(base), worker: { kind: 'account', userId: 'u1', name: 'דנה' } })
-    expect(acc.worker).toEqual({ user_id: 'u1', name: 'דנה' })
-    const free = buildChanges(base, { ...draftFromAssignment(base), worker: { kind: 'free', name: ' מחליף ' } })
-    expect(free.worker).toEqual({ user_id: null, name: 'מחליף' })
-  })
-  it('flags a missing free-text name and an over-long shift', () => {
-    expect(validateDraft({ ...draftFromAssignment(base), worker: { kind: 'free', name: ' ' } })).toHaveLength(1)
-    expect(validateDraft({ ...draftFromAssignment(base), startTime: '06:00', endTime: '23:30' })[0]).toMatch(/16/)
+  it('a night default ends the next calendar day', () => {
+    const d = defaultShiftHours('night', 'מאבטח')
+    expect(computeTimes('2032-01-06', d.start, d.end)!.crossesMidnight).toBe(true)
   })
 })
 
-describe('describeEdit', () => {
-  it('shows what it was and what it will be, including the end date of a night shift', () => {
-    const night: ShiftAssignment = { ...base, shift_category: 'night', work_date: '2032-01-06', starts_at: '2032-01-06T20:45:00Z', ends_at: '2032-01-07T05:10:00Z' }
-    const lines = describeEdit(night, { ...draftFromAssignment(night), startTime: '23:00', endTime: '07:30' })
-    const hours = lines.find((l) => l.label === 'שעות')!
-    expect(hours.before).toContain('22:45')
-    expect(hours.after).toContain('23:00')
-    expect(hours.after).toContain('מסתיימת ב')
+describe('resolveWorkerAccount', () => {
+  const profiles = [
+    { id: 'a', full_name: 'אורי כהן' },
+    { id: 'd1', full_name: 'תמר גל' },
+    { id: 'd2', full_name: 'תמר גל' },
+    { id: 'g', full_name: 'גיא' },
+  ]
+  it('an account picked from the suggestions is used', () => {
+    expect(resolveWorkerAccount('תמר גל', 'd2', profiles)).toEqual({ userId: 'd2', name: 'תמר גל' })
   })
-  it('lists worker, post and shift changes', () => {
-    const lines = describeEdit(base, { ...draftFromAssignment(base), category: 'afternoon', position: 'CD', worker: { kind: 'free', name: 'מחליף' } })
-    expect(lines.map((l) => l.label).sort()).toEqual(['משמרת', 'עובד', 'עמדה'].sort())
+  it('an exact, unique full name is the account (not a guess)', () => {
+    expect(resolveWorkerAccount('  אורי   כהן ', null, profiles)).toEqual({ userId: 'a', name: 'אורי   כהן' })
+  })
+  it('a name shared by two accounts is never attributed to either without a pick', () => {
+    expect(resolveWorkerAccount('תמר גל', null, profiles).userId).toBeNull()
+  })
+  it('a similar or partial name is free text with no account', () => {
+    expect(resolveWorkerAccount('גיא מהצרי', null, profiles).userId).toBeNull()
+    expect(resolveWorkerAccount('אורי כהנא', null, profiles).userId).toBeNull()
+    expect(resolveWorkerAccount('שם שלא רשום', null, profiles)).toEqual({ userId: null, name: 'שם שלא רשום' })
+  })
+  it('an empty name has no account', () => {
+    expect(resolveWorkerAccount('   ', null, profiles).userId).toBeNull()
   })
 })
 

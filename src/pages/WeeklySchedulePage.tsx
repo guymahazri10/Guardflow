@@ -5,10 +5,11 @@ import { addDaysIso, formatIsraelShortDateLabel, utcIsoToIsraelHHMM } from '../l
 import { weekStartIsoFor } from '../lib/scheduleImport/boardDatedSync'
 import { bucketPublishedAssignments, extraGuardPositions, weeklyCellKey } from '../lib/scheduleImport/weeklyView'
 import { allKnownPositionsForCategory } from '../lib/scheduleImport/liveBoardPositions'
+import { NIGHT_GUARD_ROLE } from '../lib/scheduleImport/positions'
 import { SHIFT_CATEGORIES, type ShiftCategory } from '../constants/shifts'
 import { AlertIcon, ClipboardIcon } from '../components/ui/StateIcon'
 import { MyShiftsList } from '../components/MyShiftsList'
-import { ScheduleEditorModal, type EditorTarget } from '../components/ScheduleEditorModal'
+import { ShiftWorkerDialog, type WorkerDialogTarget } from '../components/ShiftWorkerDialog'
 import { useAuth } from '../contexts/AuthContext'
 
 function PageShell({ children }: { children: React.ReactNode }) {
@@ -56,10 +57,9 @@ export function WeeklySchedulePage() {
   const [weekStartIso, setWeekStartIso] = useState(currentWeekIso)
   const [tab, setTab] = useState<'all' | 'mine'>('all')
   const { isAdmin } = useAuth()
-  // Editing the published schedule is a manager-only tool (also enforced by the
-  // database functions). Nobody else gets the button or the cell actions.
-  const [editMode, setEditMode] = useState(false)
-  const [editor, setEditor] = useState<EditorTarget | null>(null)
+  // Changing who works a shift is a manager-only action (also enforced by the database functions):
+  // only a manager sees names as clickable. Nobody else gets any control.
+  const [dialog, setDialog] = useState<WorkerDialogTarget | null>(null)
   const assignmentsQuery = useShiftAssignmentsForWeek(weekStartIso)
 
   const days = useMemo(
@@ -119,19 +119,6 @@ export function WeeklySchedulePage() {
             </button>
           ))}
         </div>
-        {tab === 'all' && isAdmin && (
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              className={editMode ? 'btn-primary px-4 py-2 text-sm' : 'btn-ghost px-4 py-2 text-sm'}
-              aria-pressed={editMode}
-              onClick={() => setEditMode((v) => !v)}
-            >
-              {editMode ? 'סיום עריכה' : 'עריכת הסידור'}
-            </button>
-            {editMode && <span className="text-xs text-text-secondary">לחץ על שיבוץ לעריכה, או על + להוספה</span>}
-          </div>
-        )}
         {tab === 'mine' ? (
           <div role="tabpanel" id="weekly-panel-mine" aria-labelledby="weekly-tab-mine">
             <MyShiftsList weekStartIso={weekStartIso} />
@@ -140,7 +127,7 @@ export function WeeklySchedulePage() {
           <LoadingSkeleton />
         ) : assignmentsQuery.isError ? (
           <ErrorState onRetry={() => assignmentsQuery.refetch()} />
-        ) : !hasAnyPublished && !(editMode && isAdmin) ? (
+        ) : !hasAnyPublished && !isAdmin ? (
           <EmptyState />
         ) : (
           <WeekTable
@@ -148,21 +135,13 @@ export function WeeklySchedulePage() {
             assignments={assignments}
             assignmentsByKey={assignmentsByKey}
             cancelledByKey={cancelledByKey}
-            editMode={editMode && isAdmin}
-            onEdit={(a) => setEditor({ type: 'edit', assignment: a })}
-            onRestore={(a) => setEditor({ type: 'restore', assignment: a })}
-            onAdd={(t) => setEditor({ type: 'add', ...t })}
+            canEdit={isAdmin}
+            onEdit={(a) => setDialog({ type: 'edit', assignment: a })}
+            onEmpty={(t) => setDialog({ type: 'empty', ...t })}
           />
         )}
       </div>
-      {editor && (
-        <ScheduleEditorModal
-          target={editor}
-          weekAssignments={assignments}
-          onClose={() => setEditor(null)}
-          onSaved={() => setEditor(null)}
-        />
-      )}
+      {dialog && <ShiftWorkerDialog target={dialog} weekAssignments={assignments} onClose={() => setDialog(null)} />}
     </PageShell>
   )
 }
@@ -205,26 +184,31 @@ function hoursLabel(a: ShiftAssignment): string {
   return `${utcIsoToIsraelHHMM(a.starts_at)}–${utcIsoToIsraelHHMM(a.ends_at)}`
 }
 
-type AddTarget = { workDate: string; category: ShiftCategory; position: string; workerKind: 'אחמ"ש' | 'מאבטח'; slotIndex: number }
+type EmptyTarget = {
+  workDate: string
+  category: ShiftCategory
+  position: string
+  workerKind: 'אחמ"ש' | 'מאבטח'
+  slotIndex: number
+  removed?: ShiftAssignment
+}
 
 function WeekTable({
   days,
   assignments,
   assignmentsByKey,
   cancelledByKey,
-  editMode,
+  canEdit,
   onEdit,
-  onRestore,
-  onAdd,
+  onEmpty,
 }: {
   days: string[]
   assignments: ShiftAssignment[]
   assignmentsByKey: Map<string, ShiftAssignment[]>
   cancelledByKey: Map<string, ShiftAssignment[]>
-  editMode: boolean
+  canEdit: boolean
   onEdit: (a: ShiftAssignment) => void
-  onRestore: (a: ShiftAssignment) => void
-  onAdd: (t: AddTarget) => void
+  onEmpty: (t: EmptyTarget) => void
 }) {
   // Reported directly: scrolling to see later days lost the position label
   // entirely, so a cell was unreadable without scrolling back. `right-0`
@@ -235,9 +219,12 @@ function WeekTable({
   function Cell({ row, day }: { row: Row; day: string }) {
     const key = weeklyCellKey(day, row.shiftCategory, row.position)
     const bucket = assignmentsByKey.get(key) ?? []
-    const cancelled = editMode ? (cancelledByKey.get(key) ?? []) : []
     const workerKind = row.position === 'אחמ"ש' ? 'אחמ"ש' : 'מאבטח'
-    if (bucket.length === 0 && cancelled.length === 0 && !editMode) {
+    // the night guard role holds two people; any other slot holds one
+    const capacity = row.position === NIGHT_GUARD_ROLE.label ? NIGHT_GUARD_ROLE.maxCapacity : 1
+    const removed = (cancelledByKey.get(key) ?? [])[0]
+    const emptyTarget: EmptyTarget = { workDate: day, category: row.shiftCategory, position: row.position, workerKind, slotIndex: bucket.length, removed }
+    if (bucket.length === 0 && !canEdit) {
       return <td className="px-3 py-2 text-center text-text-muted">—</td>
     }
     return (
@@ -250,12 +237,12 @@ function WeekTable({
                 <span dir="ltr" className="block text-[11px] text-text-secondary">{hoursLabel(a)}</span>
               </>
             )
-            return editMode ? (
+            return canEdit ? (
               <button
                 key={a.id}
                 type="button"
-                className="rounded-lg border border-dashed border-primary/40 px-1.5 py-1 text-center hover:bg-primary-light"
-                aria-label={`עריכת שיבוץ: ${assignmentLabel(a)} ${row.position} ${formatIsraelShortDateLabel(day)}`}
+                className="rounded-lg px-1.5 py-1 text-center hover:bg-primary-light focus-visible:bg-primary-light"
+                aria-label={`עדכון שיבוץ: ${assignmentLabel(a)} ${row.position} ${formatIsraelShortDateLabel(day)}`}
                 onClick={() => onEdit(a)}
               >
                 {body}
@@ -264,28 +251,14 @@ function WeekTable({
               <span key={a.id}>{body}</span>
             )
           })}
-          {cancelled.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              className="rounded-lg bg-background-2 px-1.5 py-1 text-center text-text-muted"
-              aria-label={`שחזור שיבוץ שבוטל: ${assignmentLabel(a)} ${row.position} ${formatIsraelShortDateLabel(day)}`}
-              onClick={() => onRestore(a)}
-            >
-              <span className="block text-xs line-through">{assignmentLabel(a)}</span>
-              <span className="block text-[11px] font-semibold text-primary">שחזר שיבוץ</span>
-            </button>
-          ))}
-          {editMode && (
+          {canEdit && bucket.length < capacity && (
             <button
               type="button"
-              className="mx-auto rounded-full px-2 text-xs font-bold text-primary"
-              aria-label={`הוספת שיבוץ ${row.position} ${formatIsraelShortDateLabel(day)}`}
-              onClick={() =>
-                onAdd({ workDate: day, category: row.shiftCategory, position: row.position, workerKind, slotIndex: bucket.length })
-              }
+              className="mx-auto rounded-lg px-2 py-1 text-xs font-bold text-primary hover:bg-primary-light"
+              aria-label={`הוספת עובד: ${row.position} ${formatIsraelShortDateLabel(day)}`}
+              onClick={() => onEmpty(emptyTarget)}
             >
-              + הוסף
+              {bucket.length === 0 ? '+ הוסף שם' : '+'}
             </button>
           )}
         </div>

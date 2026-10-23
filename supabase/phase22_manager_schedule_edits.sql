@@ -29,6 +29,11 @@
 
 alter table public.staffing_change_log add column if not exists details jsonb;
 
+-- Set when a manager (or the swap flow) chose the worker of this shift. A worker the manager picked
+-- explicitly always counts as a replacement for "My shifts", also when the account happens to equal
+-- the one the Excel was (possibly loosely) linked to. Reset at the first edit after a revert-to-file.
+alter table public.shift_assignments add column if not exists worker_set_by_manager boolean not null default false;
+
 alter table public.staffing_change_log drop constraint staffing_change_log_change_kind_check;
 alter table public.staffing_change_log add constraint staffing_change_log_change_kind_check check (
   change_kind in (
@@ -52,7 +57,8 @@ set search_path = ''
 as $$
   select a.is_manually_edited
     and (
-      a.actual_user_id is distinct from a.planned_user_id
+      a.worker_set_by_manager
+      or a.actual_user_id is distinct from a.planned_user_id
       or (a.actual_user_id is null and a.actual_name is distinct from a.source_name)
     );
 $$;
@@ -246,6 +252,7 @@ declare
   n_actual_name text;
   worker_changed boolean := false;
   is_move boolean;
+  wsm boolean;
   grp uuid := gen_random_uuid();
 begin
   if coalesce(public.get_my_role(), '') <> 'מנהל' then
@@ -301,10 +308,14 @@ begin
     raise exception 'no_changes' using errcode = '22023';
   end if;
 
+  -- a worker the manager picked now is a replacement; otherwise keep what was there, but never carry
+  -- a stale marker over from before a revert-to-file (the row was not manually edited then)
+  wsm := case when worker_changed then true when old_row.is_manually_edited then old_row.worker_set_by_manager else false end;
+
   if not is_move then
     update public.shift_assignments
     set starts_at = n_starts, ends_at = n_ends,
-        actual_user_id = n_actual_user, actual_name = n_actual_name,
+        actual_user_id = n_actual_user, actual_name = n_actual_name, worker_set_by_manager = wsm,
         is_manually_edited = true, updated_at = clock_timestamp()
     where id = old_row.id
     returning * into result;
@@ -334,7 +345,7 @@ begin
     update public.shift_assignments
     set starts_at = n_starts, ends_at = n_ends, worker_kind = old_row.worker_kind,
         source_name = old_row.source_name, planned_user_id = old_row.planned_user_id,
-        actual_user_id = n_actual_user, actual_name = n_actual_name,
+        actual_user_id = n_actual_user, actual_name = n_actual_name, worker_set_by_manager = wsm,
         source = old_row.source, import_id = old_row.import_id,
         published = true, is_manually_edited = true, updated_at = clock_timestamp()
     where id = target.id
@@ -342,10 +353,10 @@ begin
   else
     insert into public.shift_assignments (
       work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at,
-      source_name, planned_user_id, actual_user_id, actual_name, source, import_id, is_manually_edited, published
+      source_name, planned_user_id, actual_user_id, actual_name, worker_set_by_manager, source, import_id, is_manually_edited, published
     ) values (
       old_row.work_date, n_cat, old_row.worker_kind, n_pos, n_slot, n_starts, n_ends,
-      old_row.source_name, old_row.planned_user_id, n_actual_user, n_actual_name, old_row.source, old_row.import_id, true, true
+      old_row.source_name, old_row.planned_user_id, n_actual_user, n_actual_name, wsm, old_row.source, old_row.import_id, true, true
     ) returning * into result;
   end if;
 
@@ -414,15 +425,15 @@ begin
     -- a cancelled marker sits here: bring it back with the new content (history continues on the same row)
     before_snap := public.assignment_snapshot(existing);
     update public.shift_assignments
-    set starts_at = s, ends_at = e, actual_user_id = w_user, actual_name = w_name,
+    set starts_at = s, ends_at = e, actual_user_id = w_user, actual_name = w_name, worker_set_by_manager = true,
         published = true, is_manually_edited = true, updated_at = clock_timestamp()
     where id = existing.id
     returning * into result;
   else
     insert into public.shift_assignments (
       work_date, shift_category, worker_kind, position, slot_index, starts_at, ends_at,
-      source_name, planned_user_id, actual_user_id, actual_name, source, import_id, is_manually_edited, published
-    ) values (d, cat, kind, pos, slot, s, e, null, null, w_user, w_name, 'manual', null, true, true)
+      source_name, planned_user_id, actual_user_id, actual_name, worker_set_by_manager, source, import_id, is_manually_edited, published
+    ) values (d, cat, kind, pos, slot, s, e, null, null, w_user, w_name, true, 'manual', null, true, true)
     returning * into result;
   end if;
 
@@ -580,7 +591,7 @@ begin
   end if;
 
   update public.shift_assignments
-  set actual_user_id = p_new_user_id, actual_name = p_new_name, is_manually_edited = true, updated_at = clock_timestamp()
+  set actual_user_id = p_new_user_id, actual_name = p_new_name, worker_set_by_manager = true, is_manually_edited = true, updated_at = clock_timestamp()
   where id = p_assignment_id
   returning * into result;
 

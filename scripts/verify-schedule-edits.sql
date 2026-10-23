@@ -623,4 +623,43 @@ begin
   raise notice 'E13 PASSED';
 end $$;
 
+-- ===========================================================================
+-- E14: a worker the manager PICKS from the list is a replacement for "My shifts", even when the
+--      picked account equals the one the Excel was loosely linked to; a revert-to-file clears it
+-- ===========================================================================
+do $$
+declare
+  manager uuid := '00000000-0000-0000-0000-000000000001';
+  guard uuid := '00000000-0000-0000-0000-000000000003';
+  w date := date '2032-03-07';
+  v_import uuid; r public.shift_assignments; file jsonb;
+begin
+  perform pg_temp.as_user(manager);
+  insert into public.schedule_imports (week_start, source_kind, storage_path, original_filename, content_hash, created_by)
+  values (w, 'excel', 'test/e14', 'e14.xlsx', 'e14', manager) returning id into v_import;
+  reset role;
+  file := jsonb_build_array(pg_temp.file_row(w, 'morning', 'מאבטח', 'AB', 0, (w||' 06:45+02')::timestamptz, (w||' 15:10+02')::timestamptz, 'שם אחר בקובץ'));
+  perform pg_temp.publish_file(v_import, file);
+  -- the file's name loosely links to the guard account (as an old fuzzy link could)
+  update public.shift_assignments set planned_user_id = guard, actual_user_id = guard where work_date = w;
+  assert pg_temp.mine_ids(guard, w) = '', 'E14 setup: a loose planned link alone must not give the shift to the guard';
+
+  r := pg_temp.row_at(w, 'morning', 'AB', 0);
+  perform pg_temp.as_user(manager);
+  r := public.edit_shift_assignment(r.id, r.updated_at, jsonb_build_object('worker', jsonb_build_object('user_id', guard, 'name', 'אורי כהן')), null);
+  reset role;
+  assert r.worker_set_by_manager and public.shift_worker_replaced(r), 'E14 FAILED: an explicit pick must count as a replacement';
+  assert pg_temp.mine_ids(guard, w) like '%AB@2032-03-07%', 'E14 FAILED: the picked account does not see the shift in My shifts';
+
+  -- revert to the file: back to the file's own meaning; a later hours edit must not resurrect the marker
+  perform pg_temp.publish_file(v_import, file, jsonb_build_object(w::text||'|morning|AB|0', 'revert_to_file'));
+  r := pg_temp.row_at(w, 'morning', 'AB', 0);
+  assert not r.is_manually_edited and pg_temp.mine_ids(guard, w) = '', 'E14 FAILED: after revert_to_file the pick must be gone';
+  perform pg_temp.as_user(manager);
+  r := public.edit_shift_assignment(r.id, r.updated_at, jsonb_build_object('ends_at', r.ends_at + interval '30 minutes'), null);
+  reset role;
+  assert not r.worker_set_by_manager and pg_temp.mine_ids(guard, w) = '', 'E14 FAILED: a stale marker survived a revert-to-file';
+  raise notice 'E14 PASSED';
+end $$;
+
 rollback;

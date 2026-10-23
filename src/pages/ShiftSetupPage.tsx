@@ -18,7 +18,7 @@ import {
   useUpdateGuardNames,
 } from '../hooks/useRosterBoards'
 import { useProfiles } from '../hooks/useProfiles'
-import { useFeatureFlag } from '../hooks/useFeatureFlag'
+import { useFeatureEnabled } from '../hooks/useFeatureFlag'
 import type { ProfileListItem } from '../lib/profiles'
 import type { GuardAssignment, RosterBoard } from '../lib/rosterBoards'
 import GuardNameInput from '../components/ui/GuardNameInput'
@@ -57,7 +57,8 @@ export function ShiftSetupPage() {
   const canEdit = isAdmin || isCommander
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const scheduleImportFlag = useFeatureFlag('weekly_schedule_import')
+  // every signed-in role sees the published dated schedule; only the global switch gates it
+  const scheduleImportFlag = useFeatureEnabled('weekly_schedule_import')
 
   const shiftTypesQuery = useShiftTypes()
   const allShifts = shiftTypesQuery.data ?? []
