@@ -6,6 +6,8 @@ export interface ShiftConfig {
   category: ShiftCategory;
   startHour: number;
   endHour: number;
+  /** Guards on this variant (from shift_types.guard_count). */
+  guardCount?: number;
 }
 
 export const SHIFT_CATEGORIES: Record<ShiftCategory, { label: string; hours: string; startHour: number; endHour: number }> = {
@@ -33,7 +35,21 @@ export function buildShiftConfig(row: { id: string; category: ShiftCategory; gua
     label: `${catConfig.label} ${row.guard_count} מאבטחים`,
     startHour: catConfig.startHour,
     endHour: catConfig.endHour,
+    guardCount: row.guard_count,
   };
+}
+
+/** "מאבטח אחד", "שני מאבטחים", "6 מאבטחים" — the guard count as it is said. */
+export function getGuardCountLabel(count: number): string {
+  if (count === 1) return 'מאבטח אחד';
+  if (count === 2) return 'שני מאבטחים';
+  return `${count} מאבטחים`;
+}
+
+/** The option text of a shift variant: its guard count when known, otherwise the
+ *  existing short label. The variants themselves always come from shift_types. */
+export function getShiftOptionLabel(shift: ShiftConfig): string {
+  return shift.guardCount !== undefined ? getGuardCountLabel(shift.guardCount) : getShiftShortLabel(shift);
 }
 
 /** Strip the category name from a shift's label: "בוקר 6 מאבטחים" → "6 מאבטחים" */

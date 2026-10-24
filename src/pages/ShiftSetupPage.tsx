@@ -5,10 +5,8 @@ import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 import {
   getActiveCategory,
-  getShiftHoursLabel,
-  getShiftShortLabel,
-  SHIFT_CATEGORIES,
   type ShiftCategory,
+  type ShiftConfig,
 } from '../constants/shifts'
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import {
@@ -22,6 +20,7 @@ import { useFeatureEnabled } from '../hooks/useFeatureFlag'
 import type { ProfileListItem } from '../lib/profiles'
 import type { GuardAssignment, RosterBoard } from '../lib/rosterBoards'
 import GuardNameInput from '../components/ui/GuardNameInput'
+import { ShiftPicker } from '../components/ShiftPicker'
 import { ClipboardIcon } from '../components/ui/StateIcon'
 import { callReplaceAssignmentWorker, type ShiftAssignment } from '../lib/scheduleImports'
 import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
@@ -175,10 +174,11 @@ export function ShiftSetupPage() {
     setGuardNames(next)
   }, [board, workDate, datedBySlot, cancelledBySlot, scheduleImportFlag.enabled, assignmentsQuery.isLoading])
 
-  function handleCategoryChange(cat: ShiftCategory) {
-    setCategory(cat)
-    const firstInCategory = allShifts.find((s) => s.category === cat)
-    setSelectedShiftId(liveShiftIdFor(cat) ?? firstInCategory?.id ?? null)
+  // Picking a shift in the menu selects its category and that variant; loading its board,
+  // saving and going on air are unchanged.
+  function handleShiftPick(shift: ShiftConfig) {
+    setCategory(shift.category)
+    setSelectedShiftId(shift.id)
   }
 
   function handleAssignmentChange(role: string, assignment: GuardAssignment) {
@@ -273,7 +273,6 @@ export function ShiftSetupPage() {
   }
 
   // ── Derived ──
-  const shifts = allShifts.filter((s) => s.category === category)
   const cols: string[] = board?.cols ?? []
   const hasAnyName = cols.some((role) => guardNames[role]?.name.trim())
   const saving = updateGuardNamesMutation.isPending || publishRosterBoardMutation.isPending
@@ -316,86 +315,22 @@ export function ShiftSetupPage() {
         <p className="text-text-secondary text-sm mt-0.5">בחר משמרת, הזן שמות — ולחץ שמור</p>
       </div>
 
-      {/* ── Category tabs: בוקר | צהריים | לילה ── */}
-      <div role="tablist" aria-label="סוג משמרת" className="flex gap-2 px-4 mt-4">
-        {(Object.keys(SHIFT_CATEGORIES) as ShiftCategory[]).map((cat) => (
-          <button
-            key={cat}
-            role="tab"
-            aria-selected={category === cat}
-            onClick={() => handleCategoryChange(cat)}
-            className={`rounded-full px-5 min-h-11 text-sm font-bold transition-colors ${
-              category === cat ? 'bg-primary text-white' : 'bg-primary-light text-primary-600'
-            }`}
-          >
-            {SHIFT_CATEGORIES[cat].label}
-          </button>
-        ))}
-      </div>
+      {/* ── Shift choice: בוקר | צהריים | לילה, each opening a small menu of its shifts ── */}
+      <ShiftPicker
+        shifts={allShifts}
+        category={category}
+        selectedShiftId={selectedShiftId}
+        liveShiftIds={{
+          morning: liveShiftIdFor('morning'),
+          afternoon: liveShiftIdFor('afternoon'),
+          night: liveShiftIdFor('night'),
+        }}
+        loading={shiftTypesQuery.isLoading}
+        onSelect={handleShiftPick}
+      />
 
       {/* ── Scrollable body ── */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 pb-6">
-        {/* Shift variant cards */}
-        {shiftTypesQuery.isLoading ? (
-          <div className="grid grid-cols-2 gap-3">
-            {[1, 2].map((i) => (
-              <div key={i} className="card p-3.5 h-[72px] animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <div className={`grid gap-3 ${shifts.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-            {shifts.map((shift) => {
-              const selected = shift.id === selectedShiftId
-              return (
-                <button
-                  key={shift.id}
-                  onClick={() => setSelectedShiftId(shift.id)}
-                  aria-pressed={selected}
-                  className={`rounded-[24px] p-4 text-right transition-colors active:scale-[0.98] ${
-                    selected ? 'bg-primary text-white shadow-card-md' : 'bg-primary-light text-text-primary'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    {/* Checkmark circle */}
-                    <div
-                      className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                        selected ? 'border-white bg-white' : 'border-primary-200 bg-white'
-                      }`}
-                      aria-hidden="true"
-                    >
-                      {selected && (
-                        <svg width="11" height="11" viewBox="0 0 10 10" fill="none">
-                          <path
-                            d="M1.5 5l2.5 2.5 4.5-4.5"
-                            stroke="#1362FF"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
-                    </div>
-
-                    {/* Text */}
-                    <div className="flex-1 text-right">
-                      <p className="text-[15px] font-bold leading-snug">{getShiftShortLabel(shift)}</p>
-                      <p
-                        className={`text-xs mt-0.5 tabular-nums ${selected ? 'text-white' : 'text-text-secondary'}`}
-                        dir="ltr"
-                      >
-                        {getShiftHoursLabel(shift)}
-                      </p>
-                      {shift.id === liveShiftIdFor(category) && (
-                        <p className={`text-xs font-bold mt-1 ${selected ? 'text-white' : 'text-primary-600'}`}>● בשידור</p>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        )}
-
         {/* Guard name inputs */}
         {loading ? (
           <InputSkeleton />
