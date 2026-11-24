@@ -3,7 +3,6 @@ import {
   workDateForCategory,
   weekStartIsoFor,
   indexDatedBySlot,
-  lockedSlotsForSetup,
   findCancelledForSlot,
   indexCancelledBySlot,
   type CancelledSlotRef,
@@ -165,21 +164,6 @@ describe('indexDatedBySlot — night guard role with one or two guards', () => {
   })
 })
 
-describe('lockedSlotsForSetup', () => {
-  const dated = new Map([['מאבטח 1', assignment()], ['מאבטח 2', assignment()]])
-  it('locks every imported slot for an אחמ"ש', () => {
-    expect([...lockedSlotsForSetup({ isAdmin: false, isCommander: true, importEnabled: true, datedBySlot: dated })]).toEqual(['מאבטח 1', 'מאבטח 2'])
-  })
-  it('locks nothing for a מנהל, when the import feature is off, or for a non-commander', () => {
-    expect(lockedSlotsForSetup({ isAdmin: true, isCommander: false, importEnabled: true, datedBySlot: dated }).size).toBe(0)
-    expect(lockedSlotsForSetup({ isAdmin: false, isCommander: true, importEnabled: false, datedBySlot: dated }).size).toBe(0)
-    expect(lockedSlotsForSetup({ isAdmin: false, isCommander: false, importEnabled: true, datedBySlot: dated }).size).toBe(0)
-  })
-  it('locks nothing when no slot has an imported assignment, so the legacy flow still works', () => {
-    expect(lockedSlotsForSetup({ isAdmin: false, isCommander: true, importEnabled: true, datedBySlot: new Map() }).size).toBe(0)
-  })
-})
-
 describe('cancelled shifts (marker rows: published = false, edited by hand)', () => {
   const cancelled = (over: Partial<ShiftAssignment> = {}) =>
     assignment({ id: 'c1', published: false, is_manually_edited: true, position: 'לובי עליון', work_date: '2026-09-02', shift_category: 'night', ...over })
@@ -208,14 +192,6 @@ describe('cancelled shifts (marker rows: published = false, edited by hand)', ()
 
   it('the live lookup ignores a cancelled shift, so it never shows its name', () => {
     expect(findDatedForSlot([cancelled()], targets, '2026-09-02', 'night')).toBeUndefined()
-  })
-
-  it('locks cancelled slots for everyone, imported slots only for a commander', () => {
-    const dated = new Map([['א', 1]])
-    const cancelledMap = new Map([['ב', 1]])
-    expect([...lockedSlotsForSetup({ isAdmin: true, isCommander: false, importEnabled: true, datedBySlot: dated, cancelledBySlot: cancelledMap })]).toEqual(['ב'])
-    expect([...lockedSlotsForSetup({ isAdmin: false, isCommander: true, importEnabled: true, datedBySlot: dated, cancelledBySlot: cancelledMap })].sort()).toEqual(['א', 'ב'])
-    expect(lockedSlotsForSetup({ isAdmin: true, isCommander: false, importEnabled: false, datedBySlot: dated, cancelledBySlot: cancelledMap }).size).toBe(0)
   })
 
   it('saving the board keeps the template name of a cancelled slot, whatever the screen shows', () => {

@@ -15,7 +15,7 @@ export const cancelledSlotsKey = (weekStart: string) => ['cancelled-slots', week
  * this refetches on the manager-edit signal (schedule_revisions), on any visible assignment
  * change, on window focus, and once a minute as a last resort.
  */
-export function useCancelledSlots(weekStart: string): { slots: CancelledSlot[]; isError: boolean } {
+export function useCancelledSlots(weekStart: string): { slots: CancelledSlot[]; isLoading: boolean; isError: boolean } {
   const queryClient = useQueryClient()
   const query = useQuery({
     queryKey: cancelledSlotsKey(weekStart),
@@ -39,5 +39,5 @@ export function useCancelledSlots(weekStart: string): { slots: CancelledSlot[]; 
     }
   }, [weekStart, queryClient])
 
-  return { slots: query.data ?? [], isError: query.isError }
+  return { slots: query.data ?? [], isLoading: query.isLoading, isError: query.isError }
 }

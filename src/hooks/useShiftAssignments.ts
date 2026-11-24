@@ -36,7 +36,9 @@ export function useShiftAssignmentsForWeek(weekStart: string) {
           queryClient.invalidateQueries({ queryKey })
         },
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') void queryClient.invalidateQueries({ queryKey })
+      })
 
     return () => {
       supabase.removeChannel(channel)

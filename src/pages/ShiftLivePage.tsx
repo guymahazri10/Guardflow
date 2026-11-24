@@ -81,7 +81,7 @@ export function ShiftLivePage() {
   // if the two screens ever disagreed about which work_date is current, they
   // would go back to displaying and editing different assignment rows.
   const lookupWorkDate = workDateForCategory(category, now)
-  const weekStartIso = weekStartIsoFor(now)
+  const weekStartIso = weekStartIsoFor(new Date(lookupWorkDate + 'T12:00:00'))
   const assignmentsQuery = useShiftAssignmentsForWeek(scheduleImportFlag.enabled ? weekStartIso : '')
   const { slots: cancelledSlots } = useCancelledSlots(scheduleImportFlag.enabled ? weekStartIso : '')
   const { isAdmin, isCommander } = useAuth()

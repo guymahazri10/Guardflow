@@ -155,26 +155,5 @@ export function effectiveAssignmentName(assignment: ShiftAssignment): string {
 }
 
 export function effectiveAssignmentUserId(assignment: ShiftAssignment): string | null {
-  return assignment.actual_user_id ?? assignment.planned_user_id ?? null
-}
-
-/**
- * The board slots an אחמ"ש may NOT edit on the setup screen: every slot backed
- * by a dated (imported) assignment. Only a מנהל writes dated rows from there;
- * for an אחמ"ש, a save would store legacy guard_names the live screen never
- * reads and look successful while changing nothing that is displayed. They
- * replace a worker on the active shift from the live screen instead.
- */
-export function lockedSlotsForSetup(input: {
-  isAdmin: boolean
-  isCommander: boolean
-  importEnabled: boolean
-  datedBySlot: ReadonlyMap<string, unknown>
-  /** Slots whose shift was cancelled: shown empty and read-only for everyone. */
-  cancelledBySlot?: ReadonlyMap<string, unknown>
-}): Set<string> {
-  if (!input.importEnabled) return new Set()
-  const locked = new Set<string>(input.cancelledBySlot?.keys() ?? [])
-  if (!input.isAdmin && input.isCommander) for (const k of input.datedBySlot.keys()) locked.add(k)
-  return locked
+  return assignment.actual_name != null ? assignment.actual_user_id : assignment.actual_user_id ?? assignment.planned_user_id
 }

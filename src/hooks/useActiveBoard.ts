@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useId, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { getActiveCategory, type ShiftCategory } from '../constants/shifts';
 import { useShiftTypes } from './useShiftTypes';
@@ -13,7 +13,7 @@ interface ActiveBoardResult {
   refetch: () => void;
 }
 
-let instanceCounter = 0;
+
 
 export function useActiveBoard(): ActiveBoardResult {
   const shiftTypesQuery = useShiftTypes();
@@ -25,12 +25,7 @@ export function useActiveBoard(): ActiveBoardResult {
   // subscribed, so concurrent useActiveBoard() callers (e.g. ShiftLivePage
   // and PositionChangeNotifier mounted at the same time) need distinct
   // topic names or the second .subscribe() collides with the first.
-  const instanceIdRef = useRef<number | undefined>(undefined);
-  if (instanceIdRef.current === undefined) {
-    instanceCounter += 1;
-    instanceIdRef.current = instanceCounter;
-  }
-
+  const instanceId = useId();
   const category = getActiveCategory();
   const shiftIds = useMemo(
     () => (shiftTypesQuery.data ?? []).filter((s) => s.category === category).map((s) => s.id),
@@ -42,9 +37,9 @@ export function useActiveBoard(): ActiveBoardResult {
 
     let cancelled = false;
 
+    let request = 0;
     async function load() {
-      setLoading(true);
-      setError(null);
+      const version = ++request;
 
       // Fetch every published candidate rather than letting the database break
       // the tie: multiple shift-type variants in the same category can be
@@ -60,45 +55,26 @@ export function useActiveBoard(): ActiveBoardResult {
         .eq('published', true)
         .in('shift_id', shiftIds);
 
-      if (cancelled) return;
-      if (err) setError(err.message);
-      else setBoard(pickMostRecentlyTouchedBoard(data ?? []));
+      if (cancelled || version !== request) return;
+      setError(err?.message ?? null);
+      if (!err) setBoard(pickMostRecentlyTouchedBoard(data ?? []));
       setLoading(false);
     }
 
-    load();
-
+    void load();
     const channel = supabase
-      .channel(`roster-board-${instanceIdRef.current}-${category}-${tick}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'roster_boards' }, (payload) => {
-        if (payload.eventType === 'DELETE') {
-          const deletedId = (payload.old as { id: string }).id;
-          setBoard((prev) => (prev?.id === deletedId ? null : prev));
-          return;
-        }
-        const updated = payload.new as RosterBoard;
-        if (!shiftIds.includes(updated.shift_id)) return;
-        if (updated.published) {
-          // A change to some OTHER published variant must not blindly replace
-          // what's shown — that's the same tie the initial fetch above now
-          // avoids. Re-run the same tie-break over whichever of the two is
-          // currently displayed plus the incoming row, so an edit to the
-          // stale variant can't flip the live screen away from the one the
-          // manager is actually working on.
-          setBoard((prev) =>
-            pickMostRecentlyTouchedBoard(prev && prev.id !== updated.id ? [prev, updated] : [updated]),
-          );
-        } else {
-          setBoard((prev) => (prev?.id === updated.id ? null : prev));
-        }
-      })
-      .subscribe();
+      .channel(`roster-board-${instanceId}-${category}-${tick}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'roster_boards' }, () => void load())
+      .subscribe((status) => {
+        // Catch any save committed between the initial fetch and subscription, or while disconnected.
+        if (status === 'SUBSCRIBED') void load();
+      });
 
     return () => {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [category, tick, shiftTypesQuery.isLoading, shiftIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [category, tick, shiftTypesQuery.isLoading, shiftIds, instanceId]);
 
   return {
     board,

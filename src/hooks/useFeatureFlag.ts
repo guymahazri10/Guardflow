@@ -21,11 +21,11 @@ export function useFeatureFlag(id: string): { enabled: boolean; loading: boolean
  * no import or manager-edit permission: those are still the allow-list (useFeatureFlag), the
  * admin routes, and the database functions.
  */
-export function useFeatureEnabled(id: string): { enabled: boolean; loading: boolean } {
+export function useFeatureEnabled(id: string): { enabled: boolean; loading: boolean; isError: boolean } {
   const query = useQuery({
     queryKey: ['feature-flag', id],
     queryFn: () => fetchFeatureFlag(id),
   })
-  if (query.isLoading) return { enabled: false, loading: true }
-  return { enabled: isFlagEnabled(query.data), loading: false }
+  if (query.isLoading) return { enabled: false, loading: true, isError: false }
+  return { enabled: isFlagEnabled(query.data), loading: false, isError: query.isError }
 }
