@@ -62,16 +62,21 @@ describe('planDatedWrites', () => {
     expect(writes[0].edited.name).toBe('דניאל שמש')
   })
 
+  it('writes a changed account even when both workers have the same name', () => {
+    const dated = new Map([['מאבטח 1', assignment()]])
+    expect(planDatedWrites(dated, { 'מאבטח 1': named('איתמר אביטן', 'p2') })).toHaveLength(1)
+  })
+
   it('leaves an unchanged slot alone, ignoring surrounding whitespace', () => {
     const dated = new Map([['מאבטח 1', assignment()]])
-    expect(planDatedWrites(dated, { 'מאבטח 1': named('  איתמר אביטן  ') })).toEqual([])
+    expect(planDatedWrites(dated, { 'מאבטח 1': named('  איתמר אביטן  ', 'p1') })).toEqual([])
   })
 
   it('compares against the manual swap, not the imported plan, once a row was edited', () => {
     const dated = new Map([['מאבטח 1', assignment({ actual_name: 'פרנקי בראון' })]])
 
     // Matches actual_name -> nothing to write.
-    expect(planDatedWrites(dated, { 'מאבטח 1': named('פרנקי בראון') })).toEqual([])
+    expect(planDatedWrites(dated, { 'מאבטח 1': named('פרנקי בראון', 'p1') })).toEqual([])
     // Reverting to the imported plan is a real change and must be written.
     expect(planDatedWrites(dated, { 'מאבטח 1': named('איתמר אביטן' ) })).toHaveLength(1)
   })
