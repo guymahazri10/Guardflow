@@ -10,10 +10,10 @@ import {
 } from '../constants/shifts'
 import { useShiftTypes } from '../hooks/useShiftTypes'
 import {
-  usePublishRosterBoard,
+  rosterBoardKeys,
   usePublishedRosterBoards,
   useRosterBoardsByShiftId,
-  useUpdateGuardNames,
+
 } from '../hooks/useRosterBoards'
 import { useProfiles } from '../hooks/useProfiles'
 import { useFeatureEnabled } from '../hooks/useFeatureFlag'
@@ -22,7 +22,7 @@ import type { GuardAssignment, RosterBoard } from '../lib/rosterBoards'
 import GuardNameInput from '../components/ui/GuardNameInput'
 import { ShiftPicker } from '../components/ShiftPicker'
 import { ClipboardIcon } from '../components/ui/StateIcon'
-import { callReplaceAssignmentWorker, type ShiftAssignment } from '../lib/scheduleImports'
+import { type ShiftAssignment } from '../lib/scheduleImports'
 import { useShiftAssignmentsForWeek } from '../hooks/useShiftAssignments'
 import { useCancelledSlots } from '../hooks/useCancelledSlots'
 import {
@@ -32,13 +32,13 @@ import {
   indexCancelledBySlot,
   type CancelledSlotRef,
   keepTemplateNamesForSlots,
-  lockedSlotsForSetup,
+
   effectiveAssignmentName,
   effectiveAssignmentUserId,
 } from '../lib/scheduleImport/boardDatedSync'
-import { planDatedWrites, performRosterSave } from '../lib/scheduleImport/rosterSave'
+import { planDatedWrites } from '../lib/scheduleImport/rosterSave'
 import { pickMostRecentlyTouchedBoard } from '../lib/activeBoardSelection'
-import { shouldPublishOnSave } from '../lib/rosterBoardPublishing'
+import { supabase } from '../lib/supabase'
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 
@@ -93,8 +93,8 @@ export function ShiftSetupPage() {
   const [guardNames, setGuardNames] = useState<Record<string, GuardAssignment>>({})
 
   const boardsQuery = useRosterBoardsByShiftId(selectedShiftId)
-  const updateGuardNamesMutation = useUpdateGuardNames()
-  const publishRosterBoardMutation = usePublishRosterBoard()
+  const [saving, setSaving] = useState(false)
+  const baseline = useRef<{ version: string; dated: Map<string, ShiftAssignment> } | null>(null)
   const profilesQuery = useProfiles({ enabled: canEdit })
   const profiles = profilesQuery.data ?? []
 
@@ -130,14 +130,6 @@ export function ShiftSetupPage() {
     [board, cancelledSlots, assignmentsQuery.data, scheduleImportFlag.enabled, workDate],
   )
 
-  // An אחמ"ש cannot change imported assignments from here (only a מנהל can);
-  // those slots are shown read-only with a pointer to the live screen, instead
-  // of accepting an edit that "saves" but changes nothing that is displayed.
-  const lockedSlots = useMemo(
-    () => lockedSlotsForSetup({ isAdmin, isCommander, importEnabled: scheduleImportFlag.enabled, datedBySlot, cancelledBySlot }),
-    [isAdmin, isCommander, scheduleImportFlag.enabled, datedBySlot, cancelledBySlot],
-  )
-
   // ── Pull-to-refresh ──
   const touchStartY = useRef(0)
   const [pullY, setPullY] = useState(0)
@@ -154,11 +146,12 @@ export function ShiftSetupPage() {
   useEffect(() => {
     if (!board) return
     const datedPending = scheduleImportFlag.enabled && assignmentsQuery.isLoading
-    if (datedPending) return
+    if (scheduleImportFlag.loading || datedPending) return
 
     const key = `${board.id}|${workDate}`
     if (initializedKeyRef.current === key) return
     initializedKeyRef.current = key
+    baseline.current = { version: board.updated_at, dated: datedBySlot }
 
     // A slot backed by a published dated assignment shows that assignment's
     // effective name (a manual swap wins over the imported plan); every other
@@ -172,7 +165,7 @@ export function ShiftSetupPage() {
     }
     for (const role of cancelledBySlot.keys()) next[role] = { name: '', user_id: null }
     setGuardNames(next)
-  }, [board, workDate, datedBySlot, cancelledBySlot, scheduleImportFlag.enabled, assignmentsQuery.isLoading])
+  }, [board, workDate, datedBySlot, cancelledBySlot, scheduleImportFlag.enabled, scheduleImportFlag.loading, assignmentsQuery.isLoading])
 
   // Picking a shift in the menu selects its category and that variant; loading its board,
   // saving and going on air are unchanged.
@@ -197,88 +190,43 @@ export function ShiftSetupPage() {
       return
     }
 
-    // A slot backed by a dated assignment must be written to that assignment
-    // — writing only guard_names would save successfully and then never be
-    // displayed, because the live screen reads the dated row for that slot.
-    // Slots with no dated row still go to guard_names as before.
-    const datedWrites = planDatedWrites(datedBySlot, guardNames)
-
-    // replace_assignment_worker restricts an אחמ"ש caller to an assignment
-    // currently in progress; this bulk-edit screen has no per-slot "is this
-    // live right now" notion the way ShiftLivePage's swap modal does, so
-    // commanders keep using that flow for a same-shift correction.
-    const outcome = await performRosterSave({
-      boardId: board.id,
-      // a cancelled shift's slot is shown empty, but the template keeps its own value
-      guardNames: keepTemplateNamesForSlots(guardNames, board.guard_names, cancelledBySlot.keys()),
-      datedWrites,
-      canWriteDated: isAdmin,
-      // Staffing a variant here is what a manager means by "this is today's
-      // schedule", so it goes on air — only a מנהל may change `published`
-      // (RLS), an אחמ"ש still just saves names.
-      publishBoard:
-        isAdmin &&
-        shouldPublishOnSave(board, publishedBoards, (board.cols?.length ?? 0) > 0 && (board.rows?.length ?? 0) > 0),
-      deps: {
-        saveGuardNames: (vars) => updateGuardNamesMutation.mutateAsync(vars),
-        publishBoard: (id) => publishRosterBoardMutation.mutateAsync({ id, published: true }),
-        replaceAssignmentWorker: callReplaceAssignmentWorker,
-        // Realtime is the primary refresh path for other sessions, but this
-        // user's own screen shouldn't depend on Realtime's health to show the
-        // change they just made — mirrors ShiftLivePage.handleSwapSaved.
-        invalidateAssignments: () =>
-          queryClient.invalidateQueries({ queryKey: ['shift-assignments', weekStartIsoFor(nowRef.current)] }),
-      },
-    })
-
-    // Every branch below runs only after the writes have settled, so the
-    // navigation can never outrun the save.
-    if (outcome.status === 'guard-names-failed') {
-      // Don't swallow the underlying Supabase/RLS error — the toast is short
-      // by necessity, the console line is what makes it diagnosable.
-      console.error('Failed to save guard names', outcome.error)
-      toast.error('שגיאה בשמירה — נסה שוב')
-      return
-    }
-
-    if (outcome.status === 'publish-failed') {
-      console.error('Failed to publish the staffed board', outcome.error)
-      toast.error('השמות נשמרו, אך המשמרת לא עלתה לשידור החי — נסה שוב.')
-      return
-    }
-
-    if (outcome.status === 'stale') {
-      toast.error('השיבוץ שונה בינתיים על ידי משתמש אחר ולכן לא עודכן. הנתונים רועננו — בדוק ושמור שוב.')
-      initializedKeyRef.current = null
-      return
-    }
-
-    if (outcome.status === 'dated-write-failed') {
-      console.error('Failed to write guard names to dated assignments', outcome.error)
-      toast.error('הלוח נשמר, אך עדכון התצוגה החיה נכשל — בדוק במסך שידור חי.')
+    if (saving || !baseline.current) return
+    const changes = planDatedWrites(baseline.current.dated, guardNames)
+    setSaving(true)
+    try {
+      const { error } = await supabase.rpc('save_shift_setup', {
+        p_board_id: board.id,
+        p_expected_updated_at: baseline.current.version,
+        p_guard_names: keepTemplateNamesForSlots(guardNames, board.guard_names, cancelledBySlot.keys()),
+        p_changes: changes.map(({ assignment, edited }) => ({
+          id: assignment.id, updated_at: assignment.updated_at, ...edited,
+        })),
+      })
+      if (error && error.code !== '40001') throw error
+      if (error) initializedKeyRef.current = null
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: rosterBoardKeys.all }),
+        queryClient.invalidateQueries({ queryKey: ['shift-assignments'] }),
+      ])
+      if (error) {
+        toast.error('השיבוץ השתנה בינתיים. יש לפתוח מחדש את מסך השיבוץ לפני שמירה נוספת.')
+        return
+      }
+      toast.success('השיבוץ נשמר ועלה לשידור החי')
       navigate('/shift-live')
-      return
+    } catch (error) {
+      console.error('Failed to save shift setup', error)
+      toast.error('שמירת השיבוץ נכשלה. יש לרענן ולנסות שוב.')
+    } finally {
+      setSaving(false)
     }
-
-    if (outcome.status === 'dated-writes-skipped') {
-      // Previously this path silently reported success while the live screen
-      // kept showing the old names.
-      toast.error(`השינוי ב־${outcome.roles.join(', ')} לא הוחל על התצוגה החיה — נדרש מנהל.`)
-      navigate('/shift-live')
-      return
-    }
-
-    toast.success(outcome.published ? 'נשמר ועלה לשידור החי!' : 'נשמר בהצלחה!')
-    navigate('/shift-live')
   }
 
   // ── Derived ──
   const cols: string[] = board?.cols ?? []
-  const hasAnyName = cols.some((role) => guardNames[role]?.name.trim())
-  const saving = updateGuardNamesMutation.isPending || publishRosterBoardMutation.isPending
   const loading = boardsQuery.isLoading
   const noBoard = !loading && !board
-  const isDisabled = saving || (canEdit && !noBoard && cols.length > 0 && !hasAnyName)
+  const isDisabled = saving || (canEdit && (scheduleImportFlag.loading || !board?.rows.length || !cols.length || (scheduleImportFlag.enabled && (assignmentsQuery.isLoading || assignmentsQuery.isError))))
 
   return (
     <div
@@ -349,14 +297,6 @@ export function ShiftSetupPage() {
                 </Link>
               </div>
             )}
-            {lockedSlots.size > cancelledBySlot.size && (
-              <div className="card p-3 text-xs text-text-secondary leading-relaxed lg:col-span-2" role="note">
-                השיבוץ של המשמרת נטען מהסידור השבועי ולכן אי אפשר לשנות אותו מכאן.{' '}
-                <Link to="/shift-live" className="font-bold text-primary underline">
-                  להחלפת מאבטח במשמרת הפעילה — למסך שידור חי
-                </Link>
-              </div>
-            )}
             {cols.map((role) => (
               <GuardNameRow
                 key={role}
@@ -364,8 +304,8 @@ export function ShiftSetupPage() {
                 value={guardNames[role] ?? { name: '', user_id: null }}
                 onChange={(assignment) => handleAssignmentChange(role, assignment)}
                 profiles={profiles}
-                readOnly={!canEdit || lockedSlots.has(role)}
-                locked={lockedSlots.has(role)}
+                readOnly={!canEdit || cancelledBySlot.has(role)}
+                locked={cancelledBySlot.has(role)}
               />
             ))}
           </div>
@@ -425,7 +365,7 @@ function GuardNameRow({
 
       <GuardNameInput value={value} profiles={profiles} onChange={onChange} readOnly={readOnly} />
       {locked && (
-        <span className="px-3 text-[11px] text-text-muted shrink-0" title="שיבוץ מהסידור השבועי — להחלפה במסך שידור חי">
+        <span className="px-3 text-[11px] text-text-muted shrink-0" title="השיבוץ בוטל בלו״ז השבועי">
           מהסידור
         </span>
       )}

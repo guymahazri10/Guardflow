@@ -42,8 +42,9 @@ export function useActiveBoard(): ActiveBoardResult {
 
     let cancelled = false;
 
+    let request = 0;
     async function load() {
-      setLoading(true);
+      const current = ++request;
       setError(null);
 
       // Fetch every published candidate rather than letting the database break
@@ -60,39 +61,22 @@ export function useActiveBoard(): ActiveBoardResult {
         .eq('published', true)
         .in('shift_id', shiftIds);
 
-      if (cancelled) return;
+      if (cancelled || current !== request) return;
       if (err) setError(err.message);
       else setBoard(pickMostRecentlyTouchedBoard(data ?? []));
       setLoading(false);
     }
 
-    load();
+    setLoading(true);
+    void load();
 
     const channel = supabase
       .channel(`roster-board-${instanceIdRef.current}-${category}-${tick}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'roster_boards' }, (payload) => {
-        if (payload.eventType === 'DELETE') {
-          const deletedId = (payload.old as { id: string }).id;
-          setBoard((prev) => (prev?.id === deletedId ? null : prev));
-          return;
-        }
-        const updated = payload.new as RosterBoard;
-        if (!shiftIds.includes(updated.shift_id)) return;
-        if (updated.published) {
-          // A change to some OTHER published variant must not blindly replace
-          // what's shown — that's the same tie the initial fetch above now
-          // avoids. Re-run the same tie-break over whichever of the two is
-          // currently displayed plus the incoming row, so an edit to the
-          // stale variant can't flip the live screen away from the one the
-          // manager is actually working on.
-          setBoard((prev) =>
-            pickMostRecentlyTouchedBoard(prev && prev.id !== updated.id ? [prev, updated] : [updated]),
-          );
-        } else {
-          setBoard((prev) => (prev?.id === updated.id ? null : prev));
-        }
-      })
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'roster_boards' }, () => { void load(); })
+      .subscribe((status) => {
+        // Catch commits made between the initial fetch and the subscription handshake.
+        if (status === 'SUBSCRIBED') void load();
+      });
 
     return () => {
       cancelled = true;

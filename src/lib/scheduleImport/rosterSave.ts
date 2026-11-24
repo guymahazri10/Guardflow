@@ -1,6 +1,6 @@
 import type { GuardAssignment } from '../rosterBoards'
 import type { ShiftAssignment } from '../scheduleImports'
-import { effectiveAssignmentName } from './boardDatedSync'
+import { effectiveAssignmentName, effectiveAssignmentUserId } from './boardDatedSync'
 import { ScheduleEditError } from '../scheduleEditErrors'
 
 /**
@@ -31,7 +31,7 @@ export function planDatedWrites(
   const writes: DatedWrite[] = []
   for (const [role, assignment] of datedBySlot) {
     const edited = guardNames[role] ?? { name: '', user_id: null }
-    if (edited.name.trim() === effectiveAssignmentName(assignment).trim()) continue
+    if (edited.name.trim() === effectiveAssignmentName(assignment).trim() && edited.user_id === effectiveAssignmentUserId(assignment)) continue
     writes.push({ role, assignment, edited })
   }
   return writes
