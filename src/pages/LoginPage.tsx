@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import logoFull from '../assets/logo_full.png'
 
@@ -55,6 +56,7 @@ export function LoginPage() {
       <div className="w-full">
         <div className="mb-8 flex flex-col items-center text-center">
           <img src={logoFull} alt="GuardFlow" className="h-auto w-[150px]" />
+          <p className="mt-2 text-sm text-text-secondary">ניהול משמרות, שיבוץ מאבטחים ועדכון עמדות בזמן אמת.</p>
         </div>
 
         <button
@@ -113,6 +115,9 @@ export function LoginPage() {
 
         <p className="mt-5 text-center text-xs text-text-muted">
           משתמש חדש? מנהל המערכת צריך להזמין אותך קודם — לא ניתן להירשם עצמאית.
+        </p>
+        <p className="mt-3 text-center text-sm">
+          <Link to="/privacy" className="font-semibold text-primary underline">מדיניות פרטיות</Link>
         </p>
       </div>
     </section>

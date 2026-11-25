@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { AcceptInvitePage } from '../pages/AcceptInvitePage'
 import { AdminPanelPage } from '../pages/AdminPanelPage'
 import { LoginPage } from '../pages/LoginPage'
+import { PrivacyPolicyPage } from '../pages/PrivacyPolicyPage'
 import { ProfilePage } from '../pages/ProfilePage'
 import { RosterEditorPage } from '../pages/RosterEditorPage'
 import { ScheduleImportPage } from '../pages/ScheduleImportPage'
@@ -22,6 +23,7 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
+      <Route path="/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<AppShell />}>
